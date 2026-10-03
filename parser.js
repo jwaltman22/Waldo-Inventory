@@ -45,7 +45,7 @@
     list: ['list', 'show', "what's in", 'what is in', 'what do i have'],
     add: ['add', 'just got in', 'got in', 'received', 'new', 'stock', 'put away', 'put in', 'log', 'check in', 'checked in', 'i got', 'we got'],
   };
-  const FILLER = ['a label for', 'labels for', 'label for', 'a', 'an', 'the', 'some', 'my', 'our'];
+  const FILLER = ['a label for', 'labels for', 'label for', 'one more', 'another', 'more', 'a', 'an', 'the', 'some', 'my', 'our'];
   const COUNT_TAIL = /\s+(?:do i have|do we have|are there|are left|have i got|in stock|on hand|left)\s*$/i;
 
   function startsWithWord(lower, p) {

@@ -107,10 +107,10 @@
     <button id="micBtn"><span>🎤</span><span id="micLabel">Speak</span></button>
     <div id="transcript"></div>
     <form class="cmdrow" id="cmdForm" autocomplete="off">
-      <input id="cmdInput" enterkeyhint="go" placeholder="Type or dictate: add WAC-47 lens drawer 3">
+      <input id="cmdInput" enterkeyhint="go" placeholder="Type or dictate: just got in a WAC-47 lens">
       <button class="btn primary" type="submit">Go</button>
     </form>
-    <div class="hint" id="voiceHint">Try “just got in a WAC-47 lens, drawer 3” or “where is the WAC-47 lens”.</div>
+    <div class="hint" id="voiceHint">Say “just got in a WAC-47 lens” — it picks the drawer and prints the label. Or “where is the WAC-47 lens”.</div>
     <div id="answer" role="status" aria-live="polite"></div>
   </section>
 
@@ -220,6 +220,7 @@
     <div class="kv" id="syncInfo"></div>
     <label style="flex-direction:row;align-items:center;gap:10px;color:var(--ink)"><input name="speakAnswers" type="checkbox" style="width:auto"> Speak answers out loud</label>
     <label style="flex-direction:row;align-items:center;gap:10px;color:var(--ink)"><input name="autoPrint" type="checkbox" style="width:auto"> Print a label automatically when stocking in</label>
+    <label style="flex-direction:row;align-items:center;gap:10px;color:var(--ink)"><input name="askDrawer" type="checkbox" style="width:auto"> Let me pick the drawer (instead of the app choosing)</label>
     <div class="btns" style="justify-content:flex-start">
       <button class="btn" type="button" id="syncNowBtn">Sync now</button>
       <button class="btn" type="button" id="exportBtn">Export backup</button>
@@ -233,7 +234,7 @@
   </form>
 </dialog>
 
-<script src="vendor/niimbluelib.js"></script>
+<script src="niimbluelib.js"></script>
 <script src="parser.js"></script>
 <script src="app.js"></script>
 </body>

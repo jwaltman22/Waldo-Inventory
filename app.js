@@ -21,7 +21,7 @@
   };
 
   const DEFAULT_SETTINGS = {
-    syncUrl: '', syncKey: '', speakAnswers: true, autoPrint: true,
+    syncUrl: '', syncKey: '', speakAnswers: true, autoPrint: true, askDrawer: false,
     labelSize: '50x30', customW: 50, customH: 30, density: 3,
   };
   let settings = Object.assign({}, DEFAULT_SETTINGS, LS.get('jim.settings', {}));
@@ -103,6 +103,13 @@
     return prefix + n;
   }
 
+  /** Where should a new item go? Same item already stocked -> that drawer; otherwise the next empty drawer. */
+  function chooseDrawer(name) {
+    const key = normalize(name);
+    const same = live().filter((i) => normalize(i.name) === key).sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    return same ? same.drawer : suggestNextDrawer();
+  }
+
   // ---------------------------------------------------------------- voice
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let recognizer = null;
@@ -118,9 +125,15 @@
     } catch (e) { /* ignore */ }
   }
 
-  function answer(text, spoken) {
+  function answer(text, spoken, action) {
     const el = $('answer');
     el.textContent = text; el.classList.add('show');
+    if (action) {
+      const b = document.createElement('button');
+      b.className = 'btn'; b.style.marginTop = '10px'; b.style.display = 'block';
+      b.textContent = action.label; b.onclick = action.run;
+      el.appendChild(b);
+    }
     if (spoken !== false) speak(spoken || text);
   }
 
@@ -181,6 +194,7 @@
       case 'add': {
         if (!intent.name) return answer('What item should I add? Try: “add WAC-47 lens drawer 3”.');
         if (intent.drawer) return stockIn(intent.name, intent.drawer, intent.quantity);
+        if (!settings.askDrawer) return stockIn(intent.name, chooseDrawer(intent.name), intent.quantity, true);
         pendingAdd = { name: intent.name, quantity: intent.quantity };
         const suggestion = suggestNextDrawer();
         $('drawerQ').textContent = '“' + intent.name + '”' + (intent.quantity > 1 ? ' (×' + intent.quantity + ')' : '') + ' goes where? Suggested: ' + suggestion;
@@ -239,15 +253,42 @@
     }
   }
 
-  function stockIn(name, drawer, quantity) {
+  function stockIn(name, drawer, quantity, assigned) {
     const { item, merged } = addItem({ name, drawer, quantity });
-    const msg = merged
-      ? 'Added ' + quantity + ' more ' + item.name + ' — now ' + item.quantity + ' in ' + item.drawer + '.'
-      : 'Added ' + item.name + (quantity > 1 ? ' ×' + quantity : '') + ' in ' + item.drawer + '.';
-    const willPrint = settings.autoPrint && printer.connected;
-    answer(msg, item.name + ', ' + item.drawer + '.' + (willPrint ? ' Printing label.' : ''));
-    if (willPrint) printItem(item);
-    else if (settings.autoPrint && !printer.connected) toast('Saved. Printer not connected — tap Printer to print the label.');
+    let msg, spoken;
+    if (assigned && merged) {
+      msg = 'Put it in ' + item.drawer.toUpperCase() + ' — that’s where ' + item.name + ' already lives. Now ' + item.quantity + ' on hand.';
+      spoken = 'Put it in ' + item.drawer + ', with the other ' + item.name + '.';
+    } else if (assigned) {
+      msg = 'Put ' + item.name + (quantity > 1 ? ' ×' + quantity : '') + ' in ' + item.drawer.toUpperCase() + '.';
+      spoken = 'Put ' + item.name + ' in ' + item.drawer + '.';
+    } else {
+      msg = merged
+        ? 'Added ' + quantity + ' more ' + item.name + ' — now ' + item.quantity + ' in ' + item.drawer + '.'
+        : 'Added ' + item.name + (quantity > 1 ? ' ×' + quantity : '') + ' in ' + item.drawer + '.';
+      spoken = item.name + ', ' + item.drawer + '.';
+    }
+    if (settings.autoPrint) {
+      if (printer.connected) spoken += ' Printing label.';
+      else { queuePrint(item); msg += '\nLabel will print as soon as the printer connects.'; spoken += ' The label will print when the printer connects.'; }
+    }
+    answer(msg, spoken, assigned ? { label: 'Use a different drawer', run: () => openItem(item) } : null);
+    if (settings.autoPrint && printer.connected) printItem(item);
+  }
+
+  // Labels waiting for the printer (saved so a reload doesn't lose them)
+  let printQueue = LS.get('jim.printQueue', []);
+  function queuePrint(item) {
+    if (!printQueue.includes(item.id)) printQueue.push(item.id);
+    LS.set('jim.printQueue', printQueue); updatePrinterUi();
+  }
+  async function flushPrintQueue() {
+    while (printQueue.length && printer.connected) {
+      const id = printQueue[0];
+      const it = items.find((i) => i.id === id && !i.deleted);
+      if (it && !(await printItem(it))) break;
+      printQueue.shift(); LS.set('jim.printQueue', printQueue); updatePrinterUi();
+    }
   }
 
   // ---------------------------------------------------------------- label rendering (LabelRenderer port)
@@ -412,8 +453,10 @@
       printer.meta = client.getModelMetadata() || guessMetaFromName(printer.name);
       printer.task = client.getPrintTaskType() || 'B1';
       updatePrinterUi(); refreshTestPreview(); render();
-      speak('Printer connected.');
+      const waiting = printQueue.length;
+      speak('Printer connected.' + (waiting ? ' Printing ' + waiting + ' waiting label' + (waiting > 1 ? 's.' : '.') : ''));
       toast('Connected to ' + printer.name);
+      flushPrintQueue();
     } catch (e) {
       printer.connected = false;
       updatePrinterUi();
@@ -502,7 +545,7 @@
       ];
       lines.filter(Boolean).forEach((l) => { const d = document.createElement('div'); d.textContent = l; $('printerInfo').appendChild(d); });
     } else {
-      setPrinterText('Printer', printer.client ? 'bad' : '');
+      setPrinterText(printQueue.length ? 'Printer (' + printQueue.length + ' waiting)' : 'Printer', printQueue.length ? 'warn' : (printer.client ? 'bad' : ''));
       $('printerInfo').textContent = 'Not connected. Turn the M2-H on, then tap Connect and pick it from the list (it shows as “M2_H-…”).';
     }
     $('connectBtn').hidden = printer.connected;
@@ -569,7 +612,7 @@
   function updateSyncUi() {
     const pending = items.filter((i) => i.dirty).length;
     let text, state, info;
-    if (!settings.syncUrl) { text = 'This device'; state = ''; info = 'Sync is off — inventory is stored on this device only. Add a sync URL to share it across devices.'; }
+    if (!settings.syncUrl) { text = 'Local'; state = ''; info = 'Sync is off — inventory is stored on this device only. Add a sync URL to share it across devices.'; }
     else if (syncing) { text = 'Syncing…'; state = 'warn'; info = 'Syncing…'; }
     else if (!navigator.onLine) { text = pending ? 'Offline (' + pending + ')' : 'Offline'; state = 'warn'; info = 'Offline — changes are saved here and will sync when back online.'; }
     else if (syncState.lastError) { text = 'Sync error'; state = 'bad'; info = 'Last sync failed: ' + syncState.lastError; }
@@ -714,7 +757,7 @@
   function openSettings() {
     const f = $('settingsForm');
     f.syncUrl.value = settings.syncUrl; f.syncKey.value = settings.syncKey;
-    f.speakAnswers.checked = !!settings.speakAnswers; f.autoPrint.checked = !!settings.autoPrint;
+    f.speakAnswers.checked = !!settings.speakAnswers; f.autoPrint.checked = !!settings.autoPrint; f.askDrawer.checked = !!settings.askDrawer;
     updateSyncUi();
     $('settingsDlg').showModal();
   }
@@ -728,7 +771,7 @@
       items.forEach((i) => { i.dirty = true; }); // push everything to the new sheet
     }
     settings.syncUrl = newUrl; settings.syncKey = f.syncKey.value;
-    settings.speakAnswers = f.speakAnswers.checked; settings.autoPrint = f.autoPrint.checked;
+    settings.speakAnswers = f.speakAnswers.checked; settings.autoPrint = f.autoPrint.checked; settings.askDrawer = f.askDrawer.checked;
     saveSettings(); LS.set('jim.items', items);
     scheduleSync(100);
   });
@@ -787,7 +830,7 @@
     clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
   }
 
-  if (!SR) $('voiceHint').textContent = 'Tap Speak, then the 🎤 on the keyboard. Try “just got in a WAC-47 lens, drawer 3” or “where is the WAC-47 lens”.';
+  if (!SR) $('voiceHint').textContent = 'Tap Speak, then the 🎤 on the keyboard. Say “just got in a WAC-47 lens” — it picks the drawer and prints the label.';
 
   window.addEventListener('online', () => scheduleSync(200));
   window.addEventListener('offline', updateSyncUi);

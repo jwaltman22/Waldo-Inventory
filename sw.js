@@ -1,6 +1,6 @@
 // Offline app shell. Bump VERSION when you upload new files.
-const VERSION = 'jim-inventory-v1';
-const SHELL = ['./', 'index.html', 'app.js', 'parser.js', 'vendor/niimbluelib.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
+const VERSION = 'jim-inventory-v3';
+const SHELL = ['./', 'index.html', 'app.js', 'parser.js', 'niimbluelib.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

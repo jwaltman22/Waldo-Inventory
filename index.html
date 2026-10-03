@@ -49,8 +49,8 @@
     -webkit-backdrop-filter: saturate(180%) blur(16px); backdrop-filter: saturate(180%) blur(16px); }
   .brand { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; font-weight: 650; font-size: 15px; letter-spacing: -0.01em; }
   .brand span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .logo { width: 28px; height: 28px; border-radius: 8px; background: var(--grad); display: grid; place-items: center; flex: none;
-    box-shadow: 0 4px 12px -4px rgba(79,70,229,.6); }
+  .logo { width: 36px; height: 32px; border-radius: 9px; background: #16161a; display: grid; place-items: center; flex: none;
+    box-shadow: 0 4px 12px -6px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.06); }
   .chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 11px; border-radius: 999px;
     border: 1px solid var(--line); background: var(--surface); font-size: 13px; font-weight: 550; color: var(--ink-2); white-space: nowrap; box-shadow: var(--shadow-sm); }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); opacity: .6; flex: none; }
@@ -188,7 +188,7 @@
 <div class="wrap">
   <header class="topbar">
     <div class="brand">
-      <div class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l4.5 13L12 9l4.5 10L21 6"/></svg></div>
+      <div class="logo"><svg viewBox="0 0 62 50" width="26" height="21" role="img" aria-label="WaldoAir"><polygon points="0,0 31,0 15.5,25" fill="#003469"/><polygon points="31,0 62,0 46.5,25" fill="#c12026"/><polygon points="15.5,25 31,50 0,50" fill="#008fd4"/><polygon points="46.5,25 62,50 31,50" fill="#808285"/><polygon points="31,0 46.5,25 31,50 15.5,25" fill="#ffffff"/><polygon points="31.00,18.40 32.63,22.76 37.28,22.96 33.64,25.86 34.88,30.34 31.00,27.77 27.12,30.34 28.36,25.86 24.72,22.96 29.37,22.76" fill="#231f20"/></svg></div>
       <span>Waldo Supply</span>
     </div>
     <button class="chip" id="printerPill" title="Printer"><span class="dot" id="printerDot"></span><span id="printerText">Printer</span></button>
@@ -332,7 +332,7 @@
 <!-- Settings / sync -->
 <dialog id="settingsDlg">
   <form class="dlg" method="dialog" id="settingsForm">
-    <h2>Settings <span class="kv" style="font-weight:500">· v8</span></h2>
+    <h2>Settings <span class="kv" style="font-weight:500">· v9</span></h2>
     <label>Your name<input name="userName" autocomplete="given-name" placeholder="e.g. Jim" maxlength="40"></label>
     <div class="section-label">Assistant</div>
     <div class="group">
@@ -357,8 +357,8 @@
   </form>
 </dialog>
 
-<script src="niimbluelib.js?v=8"></script>
-<script src="parser.js?v=8"></script>
-<script src="app.js?v=8"></script>
+<script src="niimbluelib.js?v=9"></script>
+<script src="parser.js?v=9"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>

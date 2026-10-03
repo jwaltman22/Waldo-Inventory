@@ -434,7 +434,22 @@
     try { return navigator.bluetooth.getAvailability ? await navigator.bluetooth.getAvailability() : true; } catch (e) { return true; }
   }
 
-  async function connectPrinter() {
+  // Every GATT service a NIIMBOT may use. Must be listed up front or the browser hides it after connecting.
+  const NIIMBOT_SERVICES = ['e7810a71-73ae-499d-8c15-faa9aef0c3f2', '0000fee0-0000-1000-8000-00805f9b34fb',
+    '0000ff00-0000-1000-8000-00805f9b34fb', '49535343-fe7d-4ae5-8fa9-9fafd205e455', '000018f0-0000-1000-8000-00805f9b34fb'];
+
+  /** showAll = list every nearby Bluetooth device (for printers that don't advertise their name/service). */
+  async function pickDevice(showAll) {
+    if (showAll) return navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: NIIMBOT_SERVICES });
+    const prefixes = ['M2', 'M3', 'B1', 'B2', 'B3', 'B21', 'D1', 'D11', 'D110', 'K3', 'A8', 'NIIMBOT'];
+    return navigator.bluetooth.requestDevice({
+      filters: prefixes.map((p) => ({ namePrefix: p })).concat([{ services: [NIIMBOT_SERVICES[0]] }]),
+      optionalServices: NIIMBOT_SERVICES,
+    });
+  }
+
+  async function connectPrinter(showAll) {
+    showAll = showAll === true;
     if (!(await bluetoothAvailable())) { $('btUnsupported').hidden = false; toast('Bluetooth printing isn’t available in this browser'); return; }
     if (printer.client) { try { await printer.client.disconnect(); } catch (e) { /* */ } }
     const client = new N.NiimbotBluetoothClient();
@@ -446,7 +461,9 @@
     client.on('heartbeat', () => updatePrinterUi());
     setPrinterText('Connecting…', 'warn');
     try {
-      const res = await client.connect();
+      const device = await pickDevice(showAll);
+      setPrinterText('Connecting…', 'warn');
+      const res = await client.connect({ authorizedDevice: device });
       printer.connected = true;
       printer.name = res.deviceName || 'NIIMBOT';
       printer.info = client.getPrinterInfo();
@@ -461,8 +478,15 @@
       printer.connected = false;
       updatePrinterUi();
       const msg = String(e && e.message || e);
-      if (/cancel/i.test(msg)) return;
-      toast('Could not connect: ' + msg);
+      if (/cancel|not found|no device/i.test(msg)) {
+        toast(showAll ? 'No device picked' : 'Printer not in the list? Try “Show all devices”.');
+        return;
+      }
+      if (/suitable.*characteristic/i.test(msg)) {
+        toast('That device isn’t a NIIMBOT printer (or the NIIMBOT app still has it). Close the NIIMBOT app and try again.');
+        return;
+      }
+      toast('Could not connect: ' + msg + ' — close the NIIMBOT app, turn the printer off and on, and try again.');
     }
   }
 
@@ -549,6 +573,8 @@
       $('printerInfo').textContent = 'Not connected. Turn the M2-H on, then tap Connect and pick it from the list (it shows as “M2_H-…”).';
     }
     $('connectBtn').hidden = printer.connected;
+    $('connectAllBtn').hidden = printer.connected;
+    $('findHelp').hidden = printer.connected;
     $('disconnectBtn').hidden = !printer.connected;
     $('testPrintBtn').disabled = !printer.connected || printer.busy;
   }
@@ -747,7 +773,8 @@
   $('labelSize').onchange = () => { settings.labelSize = $('labelSize').value; $('customSize').hidden = settings.labelSize !== 'custom'; saveSettings(); refreshTestPreview(); updatePrinterUi(); };
   $('customW').oninput = $('customH').oninput = () => { settings.customW = +$('customW').value || 50; settings.customH = +$('customH').value || 30; saveSettings(); refreshTestPreview(); updatePrinterUi(); };
   $('density').onchange = () => { settings.density = +$('density').value; saveSettings(); };
-  $('connectBtn').onclick = connectPrinter;
+  $('connectBtn').onclick = () => connectPrinter(false);
+  $('connectAllBtn').onclick = () => connectPrinter(true);
   $('disconnectBtn').onclick = disconnectPrinter;
   $('testPrintBtn').onclick = () => printItem(Object.assign({}, SAMPLE, { name: 'Test label', drawer: 'Drawer 1' }));
   $('printerClose').onclick = () => $('printerDlg').close();

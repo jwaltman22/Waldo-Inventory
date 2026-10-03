@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1d4ed8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Jim Inventory">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<title>Jim Inventory</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --ink: #14161a; --muted: #5b6270; --line: #dde1e7;
+    --accent: #1d4ed8; --accent-ink: #ffffff; --ok: #15803d; --warn: #b45309; --bad: #b91c1c;
+    --chip: #eef1f6; --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --card: #181b21; --ink: #eceef2; --muted: #9aa2b1; --line: #2a2f38;
+      --accent: #3b82f6; --accent-ink: #ffffff; --ok: #22c55e; --warn: #f59e0b; --bad: #ef4444;
+      --chip: #222731; --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 17px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-text-size-adjust: 100%; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 0 16px calc(96px + env(safe-area-inset-bottom)); }
+  header { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: calc(10px + env(safe-area-inset-top)) 0 10px;
+    display: flex; align-items: center; gap: 8px; }
+  header h1 { font-size: 21px; margin: 0; flex: 1; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  @media (max-width: 420px) { header h1 { font-size: 18px; } .pill { padding: 6px 9px; font-size: 13px; } }
+  .pill { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 6px 12px;
+    font-size: 14px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+  .iconbtn { border: 1px solid var(--line); background: var(--card); border-radius: 999px; width: 38px; height: 34px; cursor: pointer; }
+
+  .speak { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px 16px; margin: 4px 0 12px;
+    background: var(--card); border-radius: 18px; box-shadow: var(--shadow); border: 1px solid var(--line); }
+  #micBtn { width: 100%; max-width: 360px; height: 72px; border-radius: 16px; border: 0; background: var(--accent); color: var(--accent-ink);
+    font-size: 22px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer; }
+  #micBtn.listening { background: var(--bad); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .75; } }
+  .cmdrow { display: flex; gap: 8px; width: 100%; }
+  .cmdrow input { flex: 1; min-width: 0; }
+  input, select, textarea { width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 12px; padding: 12px; outline: none; }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  .btn { border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 11px 16px; cursor: pointer; font-weight: 600; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  .btn.danger { color: var(--bad); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .hint { color: var(--muted); font-size: 14px; text-align: center; }
+  #transcript { min-height: 1.4em; color: var(--muted); font-style: italic; text-align: center; }
+  #answer { display: none; width: 100%; background: var(--chip); border-radius: 12px; padding: 12px 14px; font-size: 18px; white-space: pre-line; }
+  #answer.show { display: block; }
+
+  .filters { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+  .count { color: var(--muted); font-size: 14px; white-space: nowrap; }
+  .list { display: flex; flex-direction: column; gap: 10px; }
+  .item { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow);
+    display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; }
+  .item .name { font-weight: 700; font-size: 18px; overflow-wrap: anywhere; cursor: pointer; }
+  .item .drawer { font-size: 15px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .02em; }
+  .item .meta { color: var(--muted); font-size: 13px; grid-column: 1 / -1; }
+  .qty { display: flex; align-items: center; gap: 6px; }
+  .qty button { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font-size: 20px; cursor: pointer; }
+  .qty span { min-width: 2ch; text-align: center; font-weight: 700; }
+  .actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
+  .actions .btn { padding: 8px 12px; font-size: 15px; }
+  .empty { text-align: center; color: var(--muted); padding: 32px 12px; }
+
+  .fab { position: fixed; right: max(16px, env(safe-area-inset-right)); bottom: calc(18px + env(safe-area-inset-bottom)); width: 60px; height: 60px; border-radius: 50%;
+    background: var(--accent); color: var(--accent-ink); border: 0; font-size: 32px; box-shadow: 0 6px 20px rgba(0,0,0,.25); cursor: pointer; }
+
+  dialog { border: 0; border-radius: 18px; padding: 0; width: min(560px, calc(100vw - 24px)); background: var(--card); color: var(--ink); max-height: calc(100vh - 40px); }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  .dlg { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+  .dlg h2 { margin: 0; font-size: 20px; }
+  .dlg label { font-size: 14px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .btns { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+  .note { background: var(--chip); border-radius: 12px; padding: 10px 12px; font-size: 14px; }
+  .note.warn { border-left: 4px solid var(--warn); }
+  canvas.preview { width: 100%; height: auto; background: #fff; border: 1px solid var(--line); border-radius: 8px; image-rendering: pixelated; }
+  .kv { font-size: 14px; color: var(--muted); }
+  .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(90px + env(safe-area-inset-bottom)); background: #111; color: #fff;
+    padding: 10px 16px; border-radius: 12px; font-size: 15px; max-width: calc(100vw - 32px); opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 50; }
+  .toast.show { opacity: .95; }
+  .progress { height: 6px; background: var(--chip); border-radius: 3px; overflow: hidden; }
+  .progress > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Jim Inventory</h1>
+    <button class="pill" id="printerPill" title="Printer"><span class="dot" id="printerDot"></span><span id="printerText">Printer</span></button>
+    <button class="pill" id="syncPill" title="Sync"><span class="dot" id="syncDot"></span><span id="syncText">Sync</span></button>
+    <button class="iconbtn" id="settingsBtn" aria-label="Settings">⚙︎</button>
+  </header>
+
+  <section class="speak">
+    <button id="micBtn"><span>🎤</span><span id="micLabel">Speak</span></button>
+    <div id="transcript"></div>
+    <form class="cmdrow" id="cmdForm" autocomplete="off">
+      <input id="cmdInput" enterkeyhint="go" placeholder="Type or dictate: add WAC-47 lens drawer 3">
+      <button class="btn primary" type="submit">Go</button>
+    </form>
+    <div class="hint" id="voiceHint">Try “just got in a WAC-47 lens, drawer 3” or “where is the WAC-47 lens”.</div>
+    <div id="answer" role="status" aria-live="polite"></div>
+  </section>
+
+  <div class="filters">
+    <input id="filter" type="search" placeholder="Filter by name or drawer">
+    <span class="count" id="count"></span>
+  </div>
+  <div class="list" id="list"></div>
+</div>
+
+<button class="fab" id="addBtn" aria-label="Add item">+</button>
+<div class="toast" id="toast"></div>
+
+<!-- Add / edit item -->
+<dialog id="itemDlg">
+  <form class="dlg" method="dialog" id="itemForm">
+    <h2 id="itemTitle">Add item</h2>
+    <label>Item name<input name="name" required></label>
+    <div class="row2">
+      <label>Drawer<input name="drawer" required placeholder="Drawer 3"></label>
+      <label>Quantity<input name="quantity" type="number" min="0" inputmode="numeric" value="1"></label>
+    </div>
+    <div class="row2">
+      <label>SKU / part no.<input name="sku"></label>
+      <label>Category<input name="category"></label>
+    </div>
+    <label>Notes<textarea name="notes" rows="2"></textarea></label>
+    <canvas class="preview" id="itemPreview"></canvas>
+    <div class="btns">
+      <button class="btn danger" type="button" id="itemDelete">Delete</button>
+      <button class="btn" type="button" id="itemImage">Label image</button>
+      <span style="flex:1"></span>
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn" type="submit" value="save" id="itemSave">Save</button>
+      <button class="btn primary" type="submit" value="saveprint">Save + print</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Which drawer? -->
+<dialog id="drawerDlg">
+  <form class="dlg" method="dialog" id="drawerForm">
+    <h2>Which drawer?</h2>
+    <div id="drawerQ"></div>
+    <label>Drawer<input name="drawer" required></label>
+    <div class="btns">
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" type="submit" value="ok">Save + print label</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Printer -->
+<dialog id="printerDlg">
+  <div class="dlg">
+    <h2>NIIMBOT printer</h2>
+    <div class="note warn" id="btUnsupported" hidden>
+      This browser can’t reach Bluetooth printers.<br>
+      <b>On iPhone:</b> open this page in the free <b>Bluefy</b> browser app (App Store) — it can print straight to the M2-H.<br>
+      <b>Or:</b> use <i>Label image</i> on any item and print it from the NIIMBOT app.
+    </div>
+    <div id="printerInfo" class="kv">Not connected.</div>
+    <div class="note" id="niimbotAppNote">
+      If the NIIMBOT app is connected to the printer, close it (or turn its Bluetooth connection off) first — the printer only talks to one app at a time.
+    </div>
+    <div class="row2">
+      <label>Label size (mm)
+        <select id="labelSize">
+          <option value="50x30">50 × 30</option>
+          <option value="50x25">50 × 25</option>
+          <option value="50x20">50 × 20</option>
+          <option value="40x30">40 × 30</option>
+          <option value="40x20">40 × 20</option>
+          <option value="30x20">30 × 20</option>
+          <option value="custom">Custom…</option>
+        </select>
+      </label>
+      <label>Darkness
+        <select id="density">
+          <option value="1">1 (light)</option><option value="2">2</option><option value="3">3 (normal)</option>
+          <option value="4">4</option><option value="5">5 (dark)</option>
+        </select>
+      </label>
+    </div>
+    <div class="row2" id="customSize" hidden>
+      <label>Width (mm, across)<input id="customW" type="number" min="10" max="80" inputmode="numeric"></label>
+      <label>Height (mm, along)<input id="customH" type="number" min="10" max="200" inputmode="numeric"></label>
+    </div>
+    <canvas class="preview" id="testPreview"></canvas>
+    <div class="progress" id="printProgress" hidden><div></div></div>
+    <div class="btns">
+      <button class="btn" id="disconnectBtn" hidden>Disconnect</button>
+      <button class="btn" id="testPrintBtn">Test print</button>
+      <span style="flex:1"></span>
+      <button class="btn" id="printerClose">Close</button>
+      <button class="btn primary" id="connectBtn">Connect</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Settings / sync -->
+<dialog id="settingsDlg">
+  <form class="dlg" method="dialog" id="settingsForm">
+    <h2>Settings</h2>
+    <label>Sync URL (Google Apps Script web app — ends in /exec)<input name="syncUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec"></label>
+    <label>Sync passphrase<input name="syncKey" type="password" autocomplete="off"></label>
+    <div class="kv" id="syncInfo"></div>
+    <label style="flex-direction:row;align-items:center;gap:10px;color:var(--ink)"><input name="speakAnswers" type="checkbox" style="width:auto"> Speak answers out loud</label>
+    <label style="flex-direction:row;align-items:center;gap:10px;color:var(--ink)"><input name="autoPrint" type="checkbox" style="width:auto"> Print a label automatically when stocking in</label>
+    <div class="btns" style="justify-content:flex-start">
+      <button class="btn" type="button" id="syncNowBtn">Sync now</button>
+      <button class="btn" type="button" id="exportBtn">Export backup</button>
+      <button class="btn" type="button" id="importBtn">Import backup</button>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+    <div class="btns">
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" type="submit" value="save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="niimbluelib.js"></script>
+<script src="parser.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

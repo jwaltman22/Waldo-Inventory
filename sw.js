@@ -1,6 +1,6 @@
 // Offline app shell. When you upload new files, bump VERSION here and the ?v= numbers in index.html.
-const VERSION = 'waldo-supply-v7';
-const SHELL = ['./', 'index.html', 'app.js?v=7', 'parser.js?v=7', 'niimbluelib.js?v=7', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
+const VERSION = 'waldo-supply-v8';
+const SHELL = ['./', 'index.html', 'app.js?v=8', 'parser.js?v=8', 'niimbluelib.js?v=8', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));

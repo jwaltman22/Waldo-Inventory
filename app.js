@@ -21,7 +21,7 @@
   };
 
   const DEFAULT_SETTINGS = {
-    syncUrl: '', syncKey: '', speakAnswers: true, autoPrint: true, askDrawer: false,
+    syncUrl: '', syncKey: '', speakAnswers: true, autoPrint: true, askDrawer: false, userName: '',
     labelSize: '50x30', customW: 50, customH: 30, density: 3,
   };
   let settings = Object.assign({}, DEFAULT_SETTINGS, LS.get('jim.settings', {}));
@@ -193,7 +193,7 @@
   function setListening(on) {
     listening = on;
     $('micBtn').classList.toggle('listening', on);
-    $('micLabel').textContent = on ? 'Listening… tap to stop' : 'Speak';
+    $('micLabel').textContent = on ? 'Listening… tap to stop' : 'Tap to speak';
     if (on) $('transcript').textContent = '';
   }
 
@@ -202,6 +202,11 @@
 
   async function runCommand(text) {
     $('transcript').textContent = '“' + text + '”';
+    const nm = /^\s*(?:my name is|my name's|call me|i am|i'm)\s+([a-z][a-z .'-]{0,38})[.!]?\s*$/i.exec(text);
+    if (nm && !/\b(drawer|bin|shelf)\b/i.test(text) && nm[1].trim().split(/\s+/).length <= 3) {
+      settings.userName = nm[1].trim().replace(/\b([a-z])/g, (c) => c.toUpperCase()); saveSettings(); renderGreeting();
+      return answer('Nice to meet you, ' + settings.userName + '.');
+    }
     const intent = parse(text);
     switch (intent.type) {
       case 'add': {
@@ -610,6 +615,7 @@
     $('findHelp').hidden = printer.connected;
     $('disconnectBtn').hidden = !printer.connected;
     $('testPrintBtn').disabled = !printer.connected || printer.busy;
+    renderGreeting();
   }
 
   const SAMPLE = { name: 'WAC-47 Lens', drawer: 'Drawer 3', quantity: 2, sku: 'WAC-47', createdAt: Date.now() };
@@ -682,8 +688,33 @@
     $('syncInfo').textContent = info;
   }
 
+  // ---------------------------------------------------------------- UI: greeting
+  function partOfDay(d = new Date()) {
+    const h = d.getHours();
+    return h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  }
+  function renderGreeting() {
+    const now = new Date();
+    const name = String(settings.userName || '').trim();
+    $('greetTime').textContent = partOfDay(now);
+    $('greetDate').textContent = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    $('greetName').textContent = name || 'there';
+    $('setNameBtn').hidden = !!name;
+    const n = live().length;
+    $('greetSub').textContent = !n ? 'Ready when you are. What came in today?'
+      : printQueue.length ? printQueue.length + ' label' + (printQueue.length > 1 ? 's are' : ' is') + ' waiting for the printer.'
+      : 'What came in today?';
+  }
+  function renderStats() {
+    const all = live();
+    $('statItems').textContent = all.length;
+    $('statUnits').textContent = all.reduce((s, i) => s + (Number(i.quantity) || 0), 0);
+    $('statDrawers').textContent = new Set(all.map((i) => i.drawer.toLowerCase())).size;
+  }
+
   // ---------------------------------------------------------------- UI: list
   function render() {
+    renderStats(); renderGreeting();
     const q = $('filter').value.trim();
     let list = live();
     if (q) {
@@ -692,12 +723,12 @@
       list = list.filter((i) => hits.has(i.id) || i.drawer.toLowerCase().includes(q.toLowerCase()) || normalize(i.drawer) === nq);
     }
     list.sort((a, b) => a.drawer.localeCompare(b.drawer, undefined, { numeric: true }) || a.name.localeCompare(b.name));
-    $('count').textContent = list.length + (q ? ' of ' + live().length : '') + ' items';
+    $('count').textContent = q ? list.length + ' of ' + live().length : live().length + (live().length === 1 ? ' item' : ' items');
     const root = $('list');
     root.textContent = '';
     if (!list.length) {
       const d = document.createElement('div'); d.className = 'empty';
-      d.textContent = live().length ? 'No matches.' : 'Nothing stocked yet. Tap Speak or + to add the first item.';
+      d.textContent = live().length ? 'No matches.' : 'Nothing stocked yet. Tap the mic and say an item name.';
       root.appendChild(d); return;
     }
     for (const it of list) root.appendChild(itemCard(it));
@@ -705,31 +736,57 @@
 
   function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 
+  const ICON = {
+    minus: '<path d="M5 12h14"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    locate: '<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/>',
+    print: '<path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/>',
+    edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+    drawer: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 12h18"/><path d="M10 8h4M10 16h4"/>',
+  };
+  function icon(name, size = 16) {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('width', size); s.setAttribute('height', size); s.setAttribute('viewBox', '0 0 24 24');
+    s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor'); s.setAttribute('stroke-width', '2');
+    s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round');
+    s.innerHTML = ICON[name];
+    return s;
+  }
+  function actBtn(iconName, label, onClick) {
+    const b = el('button', 'act'); b.append(icon(iconName, 15), document.createTextNode(label)); b.onclick = onClick; return b;
+  }
+
   function itemCard(it) {
     const card = el('div', 'item');
     const left = el('div');
     const name = el('div', 'name', it.name); name.onclick = () => openItem(it);
     left.appendChild(name);
-    left.appendChild(el('div', 'drawer', it.drawer));
+    const tags = el('div', 'tags');
+    const badge = el('span', 'badge'); badge.append(icon('drawer', 12), document.createTextNode(it.drawer));
+    tags.appendChild(badge);
+    if (it.sku) tags.appendChild(el('span', 'badge muted', it.sku));
+    left.appendChild(tags);
     card.appendChild(left);
 
     const qty = el('div', 'qty');
-    const minus = el('button', null, '−'); minus.setAttribute('aria-label', 'Less');
-    const plus = el('button', null, '+'); plus.setAttribute('aria-label', 'More');
+    const minus = el('button'); minus.appendChild(icon('minus', 15)); minus.setAttribute('aria-label', 'Less');
+    const plus = el('button'); plus.appendChild(icon('plus', 15)); plus.setAttribute('aria-label', 'More');
     minus.onclick = () => { if (it.quantity <= 1 && !confirm('Remove ' + it.name + '?')) return; setQuantity(it, it.quantity - 1); };
     plus.onclick = () => setQuantity(it, it.quantity + 1);
     qty.append(minus, el('span', null, String(it.quantity)), plus);
     card.appendChild(qty);
 
-    const meta = [it.sku && 'SKU ' + it.sku, it.category, it.notes, it.lastPrintedAt && 'printed ' + new Date(it.lastPrintedAt).toLocaleDateString()].filter(Boolean).join(' · ');
+    const meta = [it.category, it.notes, it.lastPrintedAt && 'Label printed ' + new Date(it.lastPrintedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })].filter(Boolean).join(' · ');
     if (meta) card.appendChild(el('div', 'meta', meta));
 
     const actions = el('div', 'actions');
-    const say = el('button', 'btn', '🔊 Where'); say.onclick = () => answer(it.name + ' is in ' + it.drawer + ' (qty ' + it.quantity + ').', it.name + ' is in ' + it.drawer + '.');
-    const pr = el('button', 'btn', '🖨 Print'); pr.onclick = () => printItem(it);
+    const pr = actBtn('print', 'Print', () => printItem(it));
     if (!printer.connected) pr.title = 'Connect the printer first';
-    const ed = el('button', 'btn', 'Edit'); ed.onclick = () => openItem(it);
-    actions.append(say, pr, ed);
+    actions.append(
+      actBtn('locate', 'Locate', () => answer(it.name + ' is in ' + it.drawer + ' (qty ' + it.quantity + ').', it.name + ' is in ' + it.drawer + '.')),
+      pr,
+      actBtn('edit', 'Edit', () => openItem(it)),
+    );
     card.appendChild(actions);
     return card;
   }
@@ -816,6 +873,7 @@
   // settings dialog
   function openSettings() {
     const f = $('settingsForm');
+    f.userName.value = settings.userName || '';
     f.syncUrl.value = settings.syncUrl; f.syncKey.value = settings.syncKey;
     f.speakAnswers.checked = !!settings.speakAnswers; f.autoPrint.checked = !!settings.autoPrint; f.askDrawer.checked = !!settings.askDrawer;
     updateSyncUi();
@@ -831,11 +889,16 @@
       items.forEach((i) => { i.dirty = true; }); // push everything to the new sheet
     }
     settings.syncUrl = newUrl; settings.syncKey = f.syncKey.value;
+    settings.userName = f.userName.value.trim();
     settings.speakAnswers = f.speakAnswers.checked; settings.autoPrint = f.autoPrint.checked; settings.askDrawer = f.askDrawer.checked;
     saveSettings(); LS.set('jim.items', items);
+    renderGreeting();
     scheduleSync(100);
   });
   $('settingsBtn').onclick = openSettings;
+  const editName = () => { openSettings(); setTimeout(() => { const i = $('settingsForm').userName; i.focus(); i.select(); }, 60); };
+  $('setNameBtn').onclick = editName;
+  $('greetName').onclick = editName;
   $('syncPill').onclick = () => { if (settings.syncUrl) { syncNow(); toast('Syncing…'); } else openSettings(); };
   $('syncNowBtn').onclick = () => syncNow();
 
@@ -890,7 +953,8 @@
     clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
   }
 
-  if (!SR) $('voiceHint').textContent = 'Tap Speak, then the 🎤 on the keyboard. Say “just got in a WAC-47 lens” — it picks the drawer and prints the label.';
+  if (!SR) $('voiceHint').textContent = 'Tap the mic, then the 🎤 on your keyboard. Say an item name — I’ll pick a drawer and print the label.';
+  setInterval(renderGreeting, 60000);
 
   window.addEventListener('online', () => scheduleSync(200));
   window.addEventListener('offline', updateSyncUi);

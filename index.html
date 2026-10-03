@@ -3,8 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#1d4ed8">
+<meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0b0d" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Waldo Supply">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -12,116 +14,221 @@
 <title>Waldo Supply</title>
 <style>
   :root {
-    --bg: #f4f5f7; --card: #ffffff; --ink: #14161a; --muted: #5b6270; --line: #dde1e7;
-    --accent: #1d4ed8; --accent-ink: #ffffff; --ok: #15803d; --warn: #b45309; --bad: #b91c1c;
-    --chip: #eef1f6; --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.05);
+    --bg: #fafafa; --surface: #ffffff; --surface-2: #f4f4f5; --ink: #09090b; --ink-2: #3f3f46; --muted: #71717a;
+    --line: #e4e4e7; --line-2: #ececef;
+    --accent: #4f46e5; --accent-2: #7c3aed; --accent-soft: #eef2ff; --accent-ink: #4338ca;
+    --grad: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    --ok: #16a34a; --warn: #d97706; --bad: #dc2626;
+    --shadow-sm: 0 1px 2px rgba(9,9,11,.04);
+    --shadow: 0 1px 2px rgba(9,9,11,.04), 0 8px 24px -8px rgba(9,9,11,.08);
+    --radius: 16px;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #0f1115; --card: #181b21; --ink: #eceef2; --muted: #9aa2b1; --line: #2a2f38;
-      --accent: #3b82f6; --accent-ink: #ffffff; --ok: #22c55e; --warn: #f59e0b; --bad: #ef4444;
-      --chip: #222731; --shadow: none;
+      --bg: #0b0b0d; --surface: #141417; --surface-2: #1c1c21; --ink: #fafafa; --ink-2: #d4d4d8; --muted: #8b8b95;
+      --line: #26262c; --line-2: #1f1f24;
+      --accent: #818cf8; --accent-2: #a78bfa; --accent-soft: rgba(129,140,248,.12); --accent-ink: #a5b4fc;
+      --grad: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      --ok: #22c55e; --warn: #f59e0b; --bad: #f87171;
+      --shadow-sm: none; --shadow: 0 0 0 1px rgba(255,255,255,.02);
     }
   }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   [hidden] { display: none !important; }
   html, body { margin: 0; background: var(--bg); color: var(--ink);
-    font: 17px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-text-size-adjust: 100%; }
-  button, input, select, textarea { font: inherit; color: inherit; }
-  .wrap { max-width: 720px; margin: 0 auto; padding: 0 16px calc(96px + env(safe-area-inset-bottom)); }
-  header { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: calc(10px + env(safe-area-inset-top)) 0 10px;
-    display: flex; align-items: center; gap: 8px; }
-  header h1 { font-size: 21px; margin: 0; flex: 1; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-  @media (max-width: 420px) { header h1 { font-size: 18px; } .pill { padding: 6px 9px; font-size: 13px; } }
-  .pill { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 6px 12px;
-    font-size: 14px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
-  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
-  .iconbtn { border: 1px solid var(--line); background: var(--card); border-radius: 999px; width: 38px; height: 34px; cursor: pointer; }
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; letter-spacing: -0.006em; }
+  button, input, select, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
+  button { cursor: pointer; }
+  svg { display: block; }
+  .wrap { max-width: 680px; margin: 0 auto; padding: 0 20px calc(110px + env(safe-area-inset-bottom)); }
 
-  .speak { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px 16px; margin: 4px 0 12px;
-    background: var(--card); border-radius: 18px; box-shadow: var(--shadow); border: 1px solid var(--line); }
-  #micBtn { width: 100%; max-width: 360px; height: 72px; border-radius: 16px; border: 0; background: var(--accent); color: var(--accent-ink);
-    font-size: 22px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer; }
-  #micBtn.listening { background: var(--bad); animation: pulse 1.2s infinite; }
-  @keyframes pulse { 50% { opacity: .75; } }
-  .cmdrow { display: flex; gap: 8px; width: 100%; }
-  .cmdrow input { flex: 1; min-width: 0; }
-  input, select, textarea { width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 12px; padding: 12px; outline: none; }
-  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
-  .btn { border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 11px 16px; cursor: pointer; font-weight: 600; }
-  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
-  .btn.danger { color: var(--bad); }
-  .btn:disabled { opacity: .45; cursor: default; }
-  .hint { color: var(--muted); font-size: 14px; text-align: center; }
-  #transcript { min-height: 1.4em; color: var(--muted); font-style: italic; text-align: center; }
-  #answer { display: none; width: 100%; background: var(--chip); border-radius: 12px; padding: 12px 14px; font-size: 18px; white-space: pre-line; }
-  #answer.show { display: block; }
+  /* top bar */
+  .topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 10px;
+    padding: calc(12px + env(safe-area-inset-top)) 0 12px; background: color-mix(in srgb, var(--bg) 82%, transparent);
+    -webkit-backdrop-filter: saturate(180%) blur(16px); backdrop-filter: saturate(180%) blur(16px); }
+  .brand { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; font-weight: 650; font-size: 15px; letter-spacing: -0.01em; }
+  .brand span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .logo { width: 28px; height: 28px; border-radius: 8px; background: var(--grad); display: grid; place-items: center; flex: none;
+    box-shadow: 0 4px 12px -4px rgba(79,70,229,.6); }
+  .chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 11px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--surface); font-size: 13px; font-weight: 550; color: var(--ink-2); white-space: nowrap; box-shadow: var(--shadow-sm); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); opacity: .6; flex: none; }
+  .dot.ok { background: var(--ok); opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 18%, transparent); }
+  .dot.warn { background: var(--warn); opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 18%, transparent); }
+  .dot.bad { background: var(--bad); opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--bad) 18%, transparent); }
+  .icon-btn { width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface);
+    display: grid; place-items: center; color: var(--ink-2); box-shadow: var(--shadow-sm); flex: none; }
+  @media (max-width: 380px) { .chip { padding: 0 9px; font-size: 12px; } .brand span { display: none; } }
 
-  .filters { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
-  .count { color: var(--muted); font-size: 14px; white-space: nowrap; }
+  /* hero */
+  .hero { padding: 22px 2px 20px; }
+  .eyebrow { font-size: 13px; font-weight: 550; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .eyebrow .sep { width: 3px; height: 3px; border-radius: 50%; background: var(--muted); opacity: .6; }
+  .greet { margin: 6px 0 4px; font-size: 34px; line-height: 1.1; font-weight: 700; letter-spacing: -0.035em; }
+  .greet .name { cursor: pointer;  background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { margin: 0; color: var(--muted); font-size: 16px; }
+  .set-name { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 600; font-size: 14px; margin-top: 8px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 20px; }
+  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow-sm); }
+  .stat b { display: block; font-size: 22px; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 12px; color: var(--muted); font-weight: 550; }
+
+  /* assistant */
+  .assistant { background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 26px 18px 18px;
+    box-shadow: var(--shadow); display: flex; flex-direction: column; align-items: center; gap: 12px; position: relative; overflow: hidden; }
+  .assistant::before { content: ""; position: absolute; inset: -40% -20% auto; height: 220px; pointer-events: none;
+    background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 14%, transparent), transparent); }
+  #micBtn { position: relative; width: 84px; height: 84px; border-radius: 50%; border: 0; background: var(--grad); color: #fff;
+    display: grid; place-items: center; box-shadow: 0 10px 30px -8px rgba(79,70,229,.55), inset 0 1px 0 rgba(255,255,255,.25);
+    transition: transform .15s ease; }
+  #micBtn:active { transform: scale(.96); }
+  #micBtn::after { content: ""; position: absolute; inset: -8px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); opacity: .7; }
+  #micBtn.listening { background: linear-gradient(135deg, #ef4444, #f97316); box-shadow: 0 10px 30px -8px rgba(239,68,68,.6); }
+  #micBtn.listening::after { animation: ring 1.4s ease-out infinite; border-color: rgba(239,68,68,.5); }
+  @keyframes ring { from { transform: scale(.92); opacity: .9; } to { transform: scale(1.35); opacity: 0; } }
+  .mic-label { font-size: 14px; font-weight: 600; color: var(--ink-2); position: relative; }
+  #transcript { min-height: 1.3em; font-size: 14px; color: var(--muted); text-align: center; position: relative; }
+  .composer { position: relative; display: flex; align-items: center; width: 100%; background: var(--surface-2); border: 1px solid var(--line-2);
+    border-radius: 14px; padding: 4px 4px 4px 14px; transition: border-color .15s, box-shadow .15s; }
+  .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); background: var(--surface); }
+  .composer input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; padding: 10px 0; font-size: 16px; }
+  .composer input::placeholder { color: var(--muted); }
+  .send { width: 40px; height: 40px; border-radius: 11px; border: 0; background: var(--ink); color: var(--bg); display: grid; place-items: center; flex: none; }
+  .hint { color: var(--muted); font-size: 13px; text-align: center; position: relative; }
+  #answer { display: none; width: 100%; position: relative; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+    border-radius: 14px; padding: 30px 14px 12px; font-size: 16px; white-space: pre-line; color: var(--ink); }
+  #answer::before { content: "Waldo"; position: absolute; top: 9px; left: 14px; font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--accent-ink); }
+  #answer.show { display: block; animation: rise .25s ease; }
+  @keyframes rise { from { opacity: 0; transform: translateY(4px); } }
+  #answer .btn { background: var(--surface); }
+
+  /* inventory */
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; margin: 30px 2px 12px; }
+  .section-head h2 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.025em; }
+  .count { color: var(--muted); font-size: 13px; font-weight: 550; }
+  .search { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    padding: 0 12px; color: var(--muted); margin-bottom: 12px; box-shadow: var(--shadow-sm); }
+  .search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .search input { flex: 1; border: 0; background: transparent; outline: none; padding: 11px 0; font-size: 16px; color: var(--ink); min-width: 0; }
   .list { display: flex; flex-direction: column; gap: 10px; }
-  .item { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow);
-    display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; }
-  .item .name { font-weight: 700; font-size: 18px; overflow-wrap: anywhere; cursor: pointer; }
-  .item .drawer { font-size: 15px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .02em; }
+  .item { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 14px 10px; box-shadow: var(--shadow-sm);
+    display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: start; }
+  .item .name { font-weight: 650; font-size: 16px; letter-spacing: -0.012em; overflow-wrap: anywhere; cursor: pointer; }
+  .item .tags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+  .badge { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 7px; font-size: 12px; font-weight: 650;
+    letter-spacing: .02em; text-transform: uppercase; background: var(--accent-soft); color: var(--accent-ink); }
+  .badge.muted { background: var(--surface-2); color: var(--muted); text-transform: none; letter-spacing: 0; font-weight: 550; }
   .item .meta { color: var(--muted); font-size: 13px; grid-column: 1 / -1; }
-  .qty { display: flex; align-items: center; gap: 6px; }
-  .qty button { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font-size: 20px; cursor: pointer; }
-  .qty span { min-width: 2ch; text-align: center; font-weight: 700; }
-  .actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
-  .actions .btn { padding: 8px 12px; font-size: 15px; }
-  .empty { text-align: center; color: var(--muted); padding: 32px 12px; }
+  .qty { display: flex; align-items: center; background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 10px; height: 34px; }
+  .qty button { width: 32px; height: 32px; border: 0; background: transparent; color: var(--ink-2); display: grid; place-items: center; border-radius: 9px; }
+  .qty button:active { background: var(--line); }
+  .qty span { min-width: 2.2ch; text-align: center; font-weight: 650; font-size: 15px; font-variant-numeric: tabular-nums; }
+  .actions { grid-column: 1 / -1; display: flex; gap: 4px; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--line-2); }
+  .act { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; border: 0; border-radius: 9px;
+    background: transparent; color: var(--ink-2); font-size: 13px; font-weight: 600; }
+  .act:active { background: var(--surface-2); }
+  .act svg { color: var(--muted); }
+  .empty { text-align: center; color: var(--muted); padding: 40px 16px; border: 1px dashed var(--line); border-radius: var(--radius); font-size: 15px; }
 
-  .fab { position: fixed; right: max(16px, env(safe-area-inset-right)); bottom: calc(18px + env(safe-area-inset-bottom)); width: 60px; height: 60px; border-radius: 50%;
-    background: var(--accent); color: var(--accent-ink); border: 0; font-size: 32px; box-shadow: 0 6px 20px rgba(0,0,0,.25); cursor: pointer; }
+  .fab { position: fixed; right: max(20px, env(safe-area-inset-right)); bottom: calc(22px + env(safe-area-inset-bottom)); width: 56px; height: 56px;
+    border-radius: 18px; background: var(--ink); color: var(--bg); border: 0; display: grid; place-items: center;
+    box-shadow: 0 12px 30px -10px rgba(9,9,11,.5); z-index: 20; }
 
-  dialog { border: 0; border-radius: 18px; padding: 0; width: min(560px, calc(100vw - 24px)); background: var(--card); color: var(--ink); max-height: calc(100vh - 40px); }
-  dialog::backdrop { background: rgba(0,0,0,.45); }
-  .dlg { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
-  .dlg h2 { margin: 0; font-size: 20px; }
-  .dlg label { font-size: 14px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+  /* shared controls */
+  input, select, textarea { width: 100%; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 11px 12px; outline: none; font-size: 16px; }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 40px; border: 1px solid var(--line); background: var(--surface);
+    border-radius: 11px; padding: 0 14px; font-weight: 600; font-size: 14px; color: var(--ink); box-shadow: var(--shadow-sm); }
+  .btn.primary { background: var(--ink); color: var(--bg); border-color: transparent; }
+  .btn.danger { color: var(--bad); }
+  .btn:disabled { opacity: .4; cursor: default; }
+
+  /* sheets */
+  dialog { border: 0; padding: 0; width: min(560px, 100vw); max-height: 92vh; background: var(--surface); color: var(--ink);
+    border-radius: 22px; box-shadow: 0 30px 80px -20px rgba(0,0,0,.4); }
+  @media (max-width: 600px) {
+    dialog { margin: auto 0 0; max-width: 100vw; width: 100vw; border-radius: 22px 22px 0 0; max-height: 92vh; }
+    dialog[open] { animation: sheet .28s cubic-bezier(.2,.8,.2,1); }
+  }
+  @keyframes sheet { from { transform: translateY(40px); opacity: .4; } }
+  dialog::backdrop { background: rgba(9,9,11,.38); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+  .dlg { padding: 22px 20px calc(20px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 14px; }
+  .dlg h2 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.025em; }
+  .dlg label { font-size: 13px; color: var(--muted); font-weight: 550; display: flex; flex-direction: column; gap: 6px; }
   .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .btns { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
-  .note { background: var(--chip); border-radius: 12px; padding: 10px 12px; font-size: 14px; }
-  .note.warn { border-left: 4px solid var(--warn); }
-  canvas.preview { width: 100%; height: auto; background: #fff; border: 1px solid var(--line); border-radius: 8px; image-rendering: pixelated; }
-  .kv { font-size: 14px; color: var(--muted); }
-  .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(90px + env(safe-area-inset-bottom)); background: #111; color: #fff;
-    padding: 10px 16px; border-radius: 12px; font-size: 15px; max-width: calc(100vw - 32px); opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 50; }
-  .toast.show { opacity: .95; }
-  .progress { height: 6px; background: var(--chip); border-radius: 3px; overflow: hidden; }
-  .progress > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .note { background: var(--surface-2); border-radius: 12px; padding: 12px 14px; font-size: 14px; color: var(--ink-2); }
+  .note.warn { background: color-mix(in srgb, var(--warn) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warn) 25%, transparent); }
+  .note summary { cursor: pointer; }
+  canvas.preview { width: 100%; height: auto; background: #fff; border: 1px solid var(--line); border-radius: 12px; image-rendering: pixelated; }
+  .kv { font-size: 13px; color: var(--muted); }
+  .group { background: var(--surface-2); border-radius: 14px; overflow: hidden; }
+  .switch { display: flex !important; flex-direction: row !important; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 13px 14px; color: var(--ink) !important; font-size: 15px !important; font-weight: 500 !important; border-bottom: 1px solid var(--line); }
+  .switch:last-child { border-bottom: 0; }
+  .switch input { appearance: none; -webkit-appearance: none; width: 46px; height: 28px; border-radius: 999px; background: var(--line); position: relative;
+    padding: 0; border: 0; flex: none; transition: background .2s; box-shadow: none !important; }
+  .switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .2s; }
+  .switch input:checked { background: var(--ok); }
+  .switch input:checked::after { transform: translateX(18px); }
+  .section-label { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-top: 4px; }
+
+  .toast { position: fixed; left: 50%; transform: translate(-50%, 8px); bottom: calc(92px + env(safe-area-inset-bottom)); background: var(--ink); color: var(--bg);
+    padding: 11px 16px; border-radius: 12px; font-size: 14px; font-weight: 550; max-width: calc(100vw - 40px); opacity: 0;
+    transition: opacity .2s, transform .2s; pointer-events: none; z-index: 50; box-shadow: 0 12px 30px -10px rgba(0,0,0,.4); }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .progress { height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+  .progress > div { height: 100%; width: 0; background: var(--grad); transition: width .2s; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <h1>Waldo Supply</h1>
-    <button class="pill" id="printerPill" title="Printer"><span class="dot" id="printerDot"></span><span id="printerText">Printer</span></button>
-    <button class="pill" id="syncPill" title="Sync"><span class="dot" id="syncDot"></span><span id="syncText">Sync</span></button>
-    <button class="iconbtn" id="settingsBtn" aria-label="Settings">⚙︎</button>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l4.5 13L12 9l4.5 10L21 6"/></svg></div>
+      <span>Waldo Supply</span>
+    </div>
+    <button class="chip" id="printerPill" title="Printer"><span class="dot" id="printerDot"></span><span id="printerText">Printer</span></button>
+    <button class="chip" id="syncPill" title="Sync"><span class="dot" id="syncDot"></span><span id="syncText">Sync</span></button>
+    <button class="icon-btn" id="settingsBtn" aria-label="Settings"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
   </header>
 
-  <section class="speak">
-    <button id="micBtn"><span>🎤</span><span id="micLabel">Speak</span></button>
+  <section class="hero">
+    <div class="eyebrow"><span id="greetTime">Good morning</span><span class="sep"></span><span id="greetDate"></span></div>
+    <h1 class="greet">Hello<span id="greetComma">, </span><span class="name" id="greetName"></span>.</h1>
+    <p class="sub" id="greetSub">What came in today?</p>
+    <button class="set-name" id="setNameBtn" hidden>Add your name →</button>
+    <div class="stats">
+      <div class="stat"><b id="statItems">0</b><span>Items</span></div>
+      <div class="stat"><b id="statUnits">0</b><span>Units</span></div>
+      <div class="stat"><b id="statDrawers">0</b><span>Drawers used</span></div>
+    </div>
+  </section>
+
+  <section class="assistant">
+    <button id="micBtn" aria-label="Speak"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v4"/></svg></button>
+    <div class="mic-label" id="micLabel">Tap to speak</div>
     <div id="transcript"></div>
-    <form class="cmdrow" id="cmdForm" autocomplete="off">
-      <input id="cmdInput" enterkeyhint="go" placeholder="Type or dictate: just got in a WAC-47 lens">
-      <button class="btn primary" type="submit">Go</button>
+    <form class="composer" id="cmdForm" autocomplete="off">
+      <input id="cmdInput" enterkeyhint="send" placeholder="Tell Waldo what came in…">
+      <button class="send" type="submit" aria-label="Send"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button>
     </form>
-    <div class="hint" id="voiceHint">Say “just got in a WAC-47 lens” — it picks the drawer and prints the label. Or “where is the WAC-47 lens”.</div>
+    <div class="hint" id="voiceHint">Try “Niimbot product manual” — I’ll pick a drawer and print the label.</div>
     <div id="answer" role="status" aria-live="polite"></div>
   </section>
 
-  <div class="filters">
-    <input id="filter" type="search" placeholder="Filter by name or drawer">
-    <span class="count" id="count"></span>
+  <div class="section-head"><h2>Inventory</h2><span class="count" id="count"></span></div>
+  <div class="search">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    <input id="filter" type="search" placeholder="Search items or drawers">
   </div>
   <div class="list" id="list"></div>
 </div>
 
-<button class="fab" id="addBtn" aria-label="Add item">+</button>
+<button class="fab" id="addBtn" aria-label="Add item"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
 <div class="toast" id="toast"></div>
 
 <!-- Add / edit item -->
@@ -225,13 +332,18 @@
 <!-- Settings / sync -->
 <dialog id="settingsDlg">
   <form class="dlg" method="dialog" id="settingsForm">
-    <h2>Settings <span class="kv" style="font-weight:400">· Waldo Supply v7</span></h2>
-    <label>Sync URL (Google Apps Script web app — ends in /exec)<input name="syncUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec"></label>
+    <h2>Settings <span class="kv" style="font-weight:500">· v8</span></h2>
+    <label>Your name<input name="userName" autocomplete="given-name" placeholder="e.g. Jim" maxlength="40"></label>
+    <div class="section-label">Assistant</div>
+    <div class="group">
+      <label class="switch">Speak answers out loud<input name="speakAnswers" type="checkbox"></label>
+      <label class="switch">Print labels automatically<input name="autoPrint" type="checkbox"></label>
+      <label class="switch">Let me pick the drawer<input name="askDrawer" type="checkbox"></label>
+    </div>
+    <div class="section-label">Sync</div>
+    <label>Sync URL (Google Apps Script, ends in /exec)<input name="syncUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec"></label>
     <label>Sync passphrase<input name="syncKey" type="password" autocomplete="off"></label>
     <div class="kv" id="syncInfo"></div>
-    <label style="flex-direction:row;align-items:center;gap:10px;color:var(--ink)"><input name="speakAnswers" type="checkbox" style="width:auto"> Speak answers out loud</label>
-    <label style="flex-direction:row;align-items:center;gap:10px;color:var(--ink)"><input name="autoPrint" type="checkbox" style="width:auto"> Print a label automatically when stocking in</label>
-    <label style="flex-direction:row;align-items:center;gap:10px;color:var(--ink)"><input name="askDrawer" type="checkbox" style="width:auto"> Let me pick the drawer (instead of the app choosing)</label>
     <div class="btns" style="justify-content:flex-start">
       <button class="btn" type="button" id="syncNowBtn">Sync now</button>
       <button class="btn" type="button" id="exportBtn">Export backup</button>
@@ -245,8 +357,8 @@
   </form>
 </dialog>
 
-<script src="niimbluelib.js?v=7"></script>
-<script src="parser.js?v=7"></script>
-<script src="app.js?v=7"></script>
+<script src="niimbluelib.js?v=8"></script>
+<script src="parser.js?v=8"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>

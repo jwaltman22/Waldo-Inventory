@@ -1,5 +1,5 @@
 // Offline app shell. Bump VERSION when you upload new files.
-const VERSION = 'waldo-supply-v5';
+const VERSION = 'waldo-supply-v6';
 const SHELL = ['./', 'index.html', 'app.js', 'parser.js', 'niimbluelib.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {

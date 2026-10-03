@@ -74,6 +74,14 @@
   const keyWords = (s) => normalize(s).split(' ').filter(Boolean).map(singular);
 
   /** exact > all words match > substring > any significant word. Best first. */
+  /** True when the words clearly name something already stocked (not just a loose word overlap). */
+  function strongMatch(query) {
+    const q = normalize(query), qWords = keyWords(query);
+    if (!q) return null;
+    return live().find((it) => normalize(it.name) === q || normalize(it.sku || '') === q ||
+      (qWords.length && qWords.every((w) => keyWords(it.name).includes(w)))) || null;
+  }
+
   function findItems(query) {
     const q = normalize(query);
     if (!q) return [];
@@ -125,14 +133,19 @@
     } catch (e) { /* ignore */ }
   }
 
-  function answer(text, spoken, action) {
+  function answer(text, spoken, actions) {
     const el = $('answer');
     el.textContent = text; el.classList.add('show');
-    if (action) {
-      const b = document.createElement('button');
-      b.className = 'btn'; b.style.marginTop = '10px'; b.style.display = 'block';
-      b.textContent = action.label; b.onclick = action.run;
-      el.appendChild(b);
+    actions = [].concat(actions || []).filter(Boolean);
+    if (actions.length) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-top:10px';
+      for (const a of actions) {
+        const b = document.createElement('button');
+        b.className = 'btn'; b.textContent = a.label; b.onclick = a.run;
+        row.appendChild(b);
+      }
+      el.appendChild(row);
     }
     if (spoken !== false) speak(spoken || text);
   }
@@ -248,6 +261,17 @@
         return answer(lines + (list.length > 12 ? '\n…and ' + (list.length - 12) + ' more' : ''),
           list.length + ' items' + (intent.drawer ? ' in ' + intent.drawer : '') + '.');
       }
+      case 'bare': {
+        const known = strongMatch(intent.name);
+        if (known) {
+          $('filter').value = known.name; render();
+          return answer(known.name + ' is in ' + known.drawer + ' (qty ' + known.quantity + ').',
+            known.name + ' is in ' + known.drawer + '.',
+            { label: 'Add one more', run: () => stockIn(known.name, known.drawer, 1, true) });
+        }
+        if (settings.askDrawer) return runCommand('add ' + intent.name);
+        return stockIn(intent.name, chooseDrawer(intent.name), intent.quantity, true);
+      }
       default:
         return answer('Didn’t understand “' + text + '”. Try “add X drawer 3” or “where is X”.', 'Sorry, I didn’t understand that.');
     }
@@ -272,7 +296,16 @@
       if (printer.connected) spoken += ' Printing label.';
       else { queuePrint(item); msg += '\nLabel will print as soon as the printer connects.'; spoken += ' The label will print when the printer connects.'; }
     }
-    answer(msg, spoken, assigned ? { label: 'Use a different drawer', run: () => openItem(item) } : null);
+    const undo = {
+      label: 'Undo',
+      run: () => {
+        printQueue = printQueue.filter((id) => id !== item.id); LS.set('jim.printQueue', printQueue);
+        if (merged) setQuantity(item, item.quantity - quantity); else deleteItem(item);
+        answer('Undone — ' + item.name + (merged ? ' back to ' + item.quantity + '.' : ' removed.'), 'Undone.');
+        updatePrinterUi();
+      },
+    };
+    answer(msg, spoken, assigned ? [{ label: 'Use a different drawer', run: () => openItem(item) }, undo] : [undo]);
     if (settings.autoPrint && printer.connected) printItem(item);
   }
 

@@ -118,6 +118,9 @@
     }
     // No verb: "torque wrench, drawer 12" reads as stock-in.
     if (drawer && rest) return { type: 'add', name: rest, drawer, quantity: Math.max(1, quantity), raw: original };
+    // Just an item name ("NIIMBOT product manual"): the app finds it if it's stocked, otherwise stocks it in.
+    const bare = stripPrefixes(stripPrefixes(rest, ["here's", 'here is', 'this is', "it's", 'it is', 'i have', 'i got']), FILLER);
+    if (/[a-z0-9]/i.test(bare)) return { type: 'bare', name: bare, quantity: Math.max(1, quantity), raw: original };
     return { type: 'unknown', raw: original };
   }
 

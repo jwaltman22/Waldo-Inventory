@@ -1,5 +1,5 @@
 // Offline app shell. Bump VERSION when you upload new files.
-const VERSION = 'jim-inventory-v4';
+const VERSION = 'waldo-supply-v5';
 const SHELL = ['./', 'index.html', 'app.js', 'parser.js', 'niimbluelib.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {

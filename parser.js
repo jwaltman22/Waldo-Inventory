@@ -1,5 +1,5 @@
 /*
- * Jim Inventory — voice/typed command parser (port of VoiceCommandParser.kt).
+ * Waldo Supply — voice/typed command parser (port of VoiceCommandParser.kt).
  *
  * Deliberately rule-based: in a loud shop, predictable beats clever.
  * Returns { type: 'add'|'find'|'count'|'print'|'remove'|'list'|'unknown', ... }.

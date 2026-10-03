@@ -1,5 +1,5 @@
 /*
- * Jim Inventory — web app (iPhone via Bluefy, Android Chrome, desktop Chrome/Edge).
+ * Waldo Supply — web app (iPhone via Bluefy, Android Chrome, desktop Chrome/Edge).
  * Port of the Android app: voice-first stock-in / find, NIIMBOT label printing,
  * plus sync through a Google Sheet so every device sees the same inventory.
  */
@@ -809,7 +809,7 @@
   $('exportBtn').onclick = async () => {
     const data = JSON.stringify({ app: 'jim-inventory', version: 1, exportedAt: new Date().toISOString(), items }, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
-    const fname = 'jim-inventory-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+    const fname = 'waldo-supply-backup-' + new Date().toISOString().slice(0, 10) + '.json';
     const file = new File([blob], fname, { type: 'application/json' });
     try {
       if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: fname }); return; }
@@ -824,7 +824,7 @@
     try {
       const data = JSON.parse(await file.text());
       const incoming = Array.isArray(data) ? data : data.items;
-      if (!Array.isArray(incoming)) throw new Error('not a Jim Inventory backup');
+      if (!Array.isArray(incoming)) throw new Error('not a Waldo Supply backup');
       const byId = new Map(items.map((i) => [i.id, i]));
       let n = 0;
       for (const r of incoming) {

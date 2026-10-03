@@ -1,6 +1,6 @@
 {
-  "name": "Jim Inventory",
-  "short_name": "Inventory",
+  "name": "Waldo Supply",
+  "short_name": "Waldo Supply",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

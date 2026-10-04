@@ -21,7 +21,7 @@
   };
 
   const DEFAULT_SETTINGS = {
-    syncUrl: '', syncKey: '', speakAnswers: true, autoPrint: true, askDrawer: false, userName: '', qrOnLabels: true, voiceName: '', voiceRate: 1,
+    syncUrl: '', syncKey: '', speakAnswers: true, autoPrint: true, askDrawer: false, userName: '', qrOnLabels: true, voiceName: '', voiceRate: 1, sortBy: 'drawer', starFirst: true,
     labelSize: '50x30', customW: 50, customH: 30, density: 3,
   };
   let settings = Object.assign({}, DEFAULT_SETTINGS, LS.get('jim.settings', {}));
@@ -232,6 +232,7 @@
   }
 
   function answer(text, spoken, actions) {
+    if (currentTab !== 'items') switchTab('items');
     const el = $('answer');
     el.textContent = text; el.classList.add('show');
     actions = [].concat(actions || []).filter(Boolean);
@@ -1036,6 +1037,7 @@
   // ---------------------------------------------------------------- UI: list
   function render() {
     renderStats(); renderGreeting(); renderActivity();
+    if (!$('list')) return;
     const q = $('filter').value.trim();
     let list = live();
     if (q) {
@@ -1043,7 +1045,17 @@
       const hits = new Set(findItems(q).map((i) => i.id));
       list = list.filter((i) => hits.has(i.id) || i.drawer.toLowerCase().includes(q.toLowerCase()) || normalize(i.drawer) === nq);
     }
-    list.sort((a, b) => a.drawer.localeCompare(b.drawer, undefined, { numeric: true }) || a.name.localeCompare(b.name));
+    const byDrawer = (a, b) => a.drawer.localeCompare(b.drawer, undefined, { numeric: true }) || a.name.localeCompare(b.name);
+    const sorters = {
+      drawer: byDrawer,
+      name: (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }),
+      newest: (a, b) => (b.createdAt || 0) - (a.createdAt || 0),
+      qty: (a, b) => (isMixed(b) ? -1 : b.quantity) - (isMixed(a) ? -1 : a.quantity) || byDrawer(a, b),
+    };
+    const sorter = sorters[settings.sortBy] || byDrawer;
+    list.sort((a, b) => (settings.starFirst !== false ? (isFav(b) - isFav(a)) : 0) || sorter(a, b));
+    $('sortLabel').textContent = 'Sorted by ' + ({ drawer: 'drawer', name: 'name', newest: 'newest', qty: 'quantity' }[settings.sortBy] || 'drawer') + (settings.starFirst !== false && favs.size ? ' · starred first' : '');
+    renderDrawers();
     $('count').textContent = q ? list.length + ' of ' + live().length : live().length + (live().length === 1 ? ' item' : ' items');
     const root = $('list');
     root.textContent = '';
@@ -1068,6 +1080,16 @@
     stock: '<path d="M12 5v14M5 12h14"/>',
     use: '<path d="M5 12h14"/>',
     move: '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>',
+    battery: '<rect x="2" y="7" width="17" height="10" rx="2"/><path d="M22 11v2"/><path d="M6 10v4M10 10v4"/>',
+    tape: '<circle cx="11" cy="12" r="8"/><circle cx="11" cy="12" r="3"/><path d="M19 12h3"/>',
+    drop: '<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>',
+    plug: '<path d="M9 2v5M15 2v5"/><path d="M6 7h12v4a6 6 0 0 1-12 0z"/><path d="M12 17v5"/>',
+    nut: '<path d="M12 2l8.5 5v10L12 22l-8.5-5V7z"/><circle cx="12" cy="12" r="3.5"/>',
+    zap: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+    book: '<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 21.5V4.5"/><path d="M8 7h8"/>',
+    wrench: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/>',
+    can: '<rect x="6" y="6" width="12" height="16" rx="2"/><path d="M9 6V3h6v3"/><path d="M6 12h12"/>',
+    box: '<path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/>',
     qr: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 17h4v4h-4"/>',
   };
   function icon(name, size = 16) {
@@ -1082,58 +1104,128 @@
     const b = el('button', 'act'); b.append(icon(iconName, 15), document.createTextNode(label)); b.onclick = onClick; return b;
   }
 
+  // ---- category look: a color + icon per kind of item (from the category, else the name)
+  const KINDS = [
+    { re: /\bbatter|\baaa?\b|\b9v\b|\blithium|\bcr\d|coin cell/, icon: 'battery', color: '#e08a00' },
+    { re: /\btapes?\b|kapton|\bduct\b|masking|gaffer/, icon: 'tape', color: '#7c4dff' },
+    { re: /adhesive|\bepox|\bglue|\brtv\b|sealant|loctite|\bweld|silicone/, icon: 'drop', color: '#d6336c' },
+    { re: /\bcables?\b|\busb|\bhdmi|\bcords?\b|charger|adapter|ethernet|lightning/, icon: 'plug', color: '#0aa2c0' },
+    { re: /hardware|\bbolts?\b|\bnuts?\b|\bscrews?\b|washers?\b|\brivets?\b|fastener|cotter|standoff/, icon: 'nut', color: '#5b6b80' },
+    { re: /electric|\bfuses?\b|\bswitch|\brelays?\b|\bbulbs?\b|\bleds?\b|\bwires?\b/, icon: 'zap', color: '#d4a106' },
+    { re: /\bmanuals?\b|\bbooks?\b|\bguides?\b|binder|\blogbook|\bdocs?\b|document/, icon: 'book', color: '#0a74c2' },
+    { re: /wrench|\btools?\b|driver|pliers?\b|\bsockets?\b|ratchet|hammer|\bdrills?\b/, icon: 'wrench', color: '#c12026' },
+    { re: /\boils?\b|\bfluids?\b|grease|lubric|\bfuel|cleaner|\bspray/, icon: 'can', color: '#2f9e44' },
+  ];
+  function kindOf(it) {
+    const cat = String(it.category || '').toLowerCase(), nm = String(it.name || '').toLowerCase();
+    return KINDS.find((k) => k.re.test(cat)) || KINDS.find((k) => k.re.test(nm)) || { icon: 'box', color: '#003469' };
+  }
+  function drawerColor(drawer) {
+    const d = cfgFor(drawer);
+    return d && d.category && !isGeneral(d) ? kindOf({ category: d.category }).color : '#4a5a70';
+  }
+
+  // ---- favorites (stars) are kept per phone
+  let favs = new Set(LS.get('jim.favs', []));
+  const isFav = (it) => (favs.has(it.id) ? 1 : 0);
+  function toggleFav(it) {
+    if (favs.has(it.id)) favs.delete(it.id); else favs.add(it.id);
+    LS.set('jim.favs', [...favs]); render();
+  }
+
   function itemCard(it) {
     const card = el('div', 'item');
-    const left = el('div');
-    const name = el('div', 'name', it.name); name.onclick = () => openItem(it);
-    left.appendChild(name);
-    const tags = el('div', 'tags');
-    const badge = el('span', 'badge'); badge.append(icon('drawer', 12), document.createTextNode(it.drawer));
-    tags.appendChild(badge);
-    if (it.sku && !isMixed(it)) tags.appendChild(el('span', 'badge muted', it.sku));
-    left.appendChild(tags);
-    card.appendChild(left);
+    const k = kindOf(it);
+    const av = el('div', 'avatar'); av.style.background = k.color; av.appendChild(icon(k.icon, 22));
+    card.appendChild(av);
+
+    const main = el('div', 'item-main');
+    main.appendChild(el('div', 'name', it.name));
+    const q = el('div', 'qline');
+    if (isMixed(it)) q.append(document.createTextNode('Mixed drawer · '), el('b', null, String(getContents(it).length)), document.createTextNode(getContents(it).length === 1 ? ' part' : ' parts'));
+    else {
+      q.append(document.createTextNode('Qty '), el('b', null, String(it.quantity)));
+      q.appendChild(el('i', null, '  ·  Added ' + new Date(it.createdAt || Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })));
+    }
+    main.appendChild(q);
+    const chips = el('div', 'chips');
+    const dc = el('span', 'tag drawer'); dc.style.background = drawerColor(it.drawer); dc.append(icon('drawer', 12), document.createTextNode(it.drawer));
+    chips.appendChild(dc);
+    if (isMixed(it)) chips.appendChild(el('span', 'tag mixed', 'Mixed'));
+    if (it.category && !(cfgFor(it.drawer) && cfgFor(it.drawer).category === it.category && isMixed(it))) chips.appendChild(el('span', 'tag soft', it.category));
+    if (it.sku && !isMixed(it)) chips.appendChild(el('span', 'tag soft', it.sku));
+    main.appendChild(chips);
+    card.appendChild(main);
+
+    const star = el('button', 'star' + (favs.has(it.id) ? ' on' : ''));
+    star.setAttribute('aria-label', favs.has(it.id) ? 'Unstar' : 'Star');
+    star.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="' + (favs.has(it.id) ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>';
+    star.onclick = (e) => { e.stopPropagation(); toggleFav(it); };
+    card.appendChild(star);
 
     if (isMixed(it)) {
-      card.appendChild(el('span', 'badge muted', 'Mixed'));
       const parts = getContents(it);
       const box = el('div', 'parts');
-      parts.slice(0, 12).forEach((p) => box.appendChild(el('span', 'part', p)));
-      if (parts.length > 12) box.appendChild(el('span', 'part more', '+' + (parts.length - 12) + ' more'));
+      parts.slice(0, 10).forEach((p) => box.appendChild(el('span', 'part', p)));
+      if (parts.length > 10) box.appendChild(el('span', 'part more', '+' + (parts.length - 10) + ' more'));
       if (!parts.length) box.appendChild(el('span', 'part more', 'No parts listed yet'));
       card.appendChild(box);
-      const actions = el('div', 'actions');
-      actions.append(
-        actBtn('locate', 'Locate', () => focusItem(it)),
-        actBtn('print', 'Label', () => printOrQueueDrawer(cfgFor(it.drawer) || { name: it.drawer, category: it.category, mode: 'mixed' })),
-        actBtn('edit', 'Edit', () => openItem(it)),
-      );
-      card.appendChild(actions);
-      return card;
     }
-
-    const qty = el('div', 'qty');
-    const minus = el('button'); minus.appendChild(icon('minus', 15)); minus.setAttribute('aria-label', 'Less');
-    const plus = el('button'); plus.appendChild(icon('plus', 15)); plus.setAttribute('aria-label', 'More');
-    minus.onclick = () => { if (it.quantity <= 1) return removeWithUndo(it); setQuantity(it, it.quantity - 1); };
-    plus.onclick = () => setQuantity(it, it.quantity + 1);
-    qty.append(minus, el('span', null, String(it.quantity)), plus);
-    card.appendChild(qty);
-
-    const meta = [it.category, it.notes, it.lastPrintedAt && 'Label printed ' + new Date(it.lastPrintedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })].filter(Boolean).join(' · ');
-    if (meta) card.appendChild(el('div', 'meta', meta));
-
-    const actions = el('div', 'actions');
-    const pr = actBtn('print', 'Print', () => printItem(it));
-    if (!printer.connected) pr.title = 'Connect the printer first';
-    actions.append(
-      actBtn('locate', 'Locate', () => focusItem(it)),
-      pr,
-      actBtn('edit', 'Edit', () => openItem(it)),
-    );
-    card.appendChild(actions);
+    card.addEventListener('click', () => (isMixed(it) ? focusItem(it, true) : openItem(it)));
     return card;
   }
+
+  // ---- Drawers tab
+  function renderDrawers() {
+    const root = $('drawerList');
+    if (!root) return;
+    root.textContent = '';
+    const all = live();
+    const cfg = drawerCfg();
+    const names = cfg.map((d) => d.name);
+    for (const i of all) if (!names.some((n) => n.toLowerCase() === i.drawer.toLowerCase())) names.push(i.drawer);
+    names.sort((x, y) => x.localeCompare(y, undefined, { numeric: true }));
+    for (const name of names) {
+      const d = cfgFor(name) || { name, category: '', mode: 'tracked' };
+      const inside = all.filter((i) => i.drawer.toLowerCase() === name.toLowerCase());
+      const card = el('div', 'dcard');
+      const num = el('div', 'dnum', (name.match(/[A-Z]?-?\d+[A-Z]?$/i) || [name.slice(0, 2)])[0].toUpperCase());
+      num.style.background = drawerColor(name);
+      const mid = el('div');
+      mid.appendChild(el('div', 'dname', name + (d.category ? ' · ' + d.category : '')));
+      const mixedBox = inside.find(isMixed);
+      const tracked = inside.filter((i) => !isMixed(i));
+      const bits = [];
+      if (d.mode === 'mixed') { const n = mixedBox ? getContents(mixedBox).length : 0; bits.push('Mixed · ' + n + (n === 1 ? ' part' : ' parts')); }
+      const units = tracked.reduce((s2, i) => s2 + i.quantity, 0);
+      if (tracked.length) bits.push(tracked.length + ' item' + (tracked.length > 1 ? 's' : '') + ' · ' + units + ' unit' + (units === 1 ? '' : 's'));
+      if (!bits.length) bits.push('Empty');
+      mid.appendChild(el('div', 'dsub', bits.join(' · ')));
+      const acts = el('div', 'dacts');
+      const lb = el('button', 'btn sm'); lb.append(icon('print', 14), document.createTextNode('Label'));
+      lb.onclick = (e) => { e.stopPropagation(); printOrQueueDrawer(d); };
+      acts.appendChild(lb);
+      card.append(num, mid, acts);
+      card.style.cursor = 'pointer';
+      card.onclick = () => focusDrawer(name);
+      root.appendChild(card);
+    }
+  }
+
+  // ---- tabs
+  let currentTab = 'items';
+  function switchTab(name) {
+    currentTab = name;
+    document.querySelectorAll('[data-pane]').forEach((p) => { p.hidden = p.dataset.pane !== name; });
+    const tabs = [...document.querySelectorAll('.tab')];
+    tabs.forEach((t) => t.classList.toggle('on', t.dataset.tab === name));
+    const idx = tabs.findIndex((t) => t.dataset.tab === name);
+    $('tabInk').style.transform = 'translateX(' + (idx * 100) + '%) translateX(' + (idx * 36) + 'px)';
+    $('addBtn').hidden = name === 'activity';
+    if (name === 'activity') { activityAll = true; renderActivity(); }
+    window.scrollTo({ top: 0 });
+  }
+  document.querySelectorAll('.tab').forEach((t) => { t.onclick = () => switchTab(t.dataset.tab); });
 
   // ---------------------------------------------------------------- swipe actions (right = print, left = remove)
   function swipeable(card, it) {
@@ -1213,8 +1305,10 @@
   function renderActivity() {
     const wrap = $('activityWrap');
     if (!wrap) return;
-    wrap.hidden = !activity.length;
-    if (!activity.length) return;
+    if (!activity.length) {
+      $('activitySummary').textContent = 'Nothing yet. Stock, use or print something and it shows up here.';
+      $('activityList').textContent = ''; $('activityMore').hidden = true; return;
+    }
     const start = new Date(); start.setHours(0, 0, 0, 0);
     const today = activity.filter((a) => a.t >= start.getTime());
     const c = (type) => today.filter((a) => a.type === type).length;
@@ -1222,7 +1316,7 @@
     $('activitySummary').textContent = today.length ? 'Today: ' + bits.join(' · ') : 'Nothing yet today.';
     const root = $('activityList');
     root.textContent = '';
-    for (const a of activity.slice(0, activityAll ? 40 : 5)) {
+    for (const a of activity.slice(0, activityAll ? 60 : 5)) {
       const row = el('div', 'arow');
       const dot = el('span', 'adot ' + a.type);
       dot.appendChild(icon({ stock: 'stock', use: 'use', remove: 'trash', print: 'print', move: 'move', edit: 'edit' }[a.type] || 'edit', 13));
@@ -1250,6 +1344,8 @@
     f.category.value = it ? it.category || '' : '';
     f.notes.value = it ? it.notes || '' : '';
     $('itemDelete').hidden = !it;
+    $('quickBar').hidden = !it || isMixed(it);
+    if (it && !isMixed(it)) $('qVal').textContent = it.quantity;
     updateItemPreview();
     $('itemDlg').showModal();
     if (!it) setTimeout(() => f.name.focus(), 50);
@@ -1305,6 +1401,37 @@
     if (editing) { const it = editing; $('itemDlg').close(); removeWithUndo(it); }
   };
   $('itemImage').onclick = () => shareLabelImage(formItem());
+  const qStep = (d) => {
+    const it = editing; if (!it) return;
+    if (it.quantity + d <= 0) { $('itemDlg').close(); removeWithUndo(it); return; }
+    setQuantity(it, it.quantity + d);
+    $('qVal').textContent = it.quantity; $('itemForm').quantity.value = it.quantity; updateItemPreview();
+  };
+  $('qMinus').onclick = () => qStep(-1);
+  $('qPlus').onclick = () => qStep(1);
+  $('qPrint').onclick = () => { if (editing) printItem(editing); };
+  $('qLocate').onclick = () => { const it = editing; if (it) { $('itemDlg').close(); focusItem(it); } };
+
+  // sort sheet + search + drawers tab buttons
+  $('sortBtn').onclick = () => {
+    const f = $('sortForm');
+    [...f.sortBy].forEach((r) => { r.checked = r.value === (settings.sortBy || 'drawer'); });
+    f.starFirst.checked = settings.starFirst !== false;
+    $('sortDlg').showModal();
+  };
+  $('sortForm').addEventListener('change', () => {
+    const f = $('sortForm');
+    settings.sortBy = ([...f.sortBy].find((r) => r.checked) || {}).value || 'drawer';
+    settings.starFirst = f.starFirst.checked;
+    saveSettings(); render();
+  });
+  $('searchBtn').onclick = () => {
+    switchTab('items');
+    const box = $('searchBox');
+    window.scrollTo({ top: Math.max(0, box.getBoundingClientRect().top + window.scrollY - 140), behavior: 'smooth' });
+    setTimeout(() => $('filter').focus(), 250);
+  };
+  $('editDrawersBtn').onclick = openDrawers;
 
   $('drawerForm').addEventListener('submit', (e) => {
     const action = e.submitter && e.submitter.value;
@@ -1587,7 +1714,7 @@
     clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
   }
 
-  if (!SR) $('voiceHint').textContent = 'Tap the mic, then the 🎤 on your keyboard. Say an item name — I’ll pick a drawer and print the label.';
+  if (!SR) $('voiceHint').textContent = 'Tap the mic, then the 🎤 on your keyboard. Say an item name — I’ll pick the drawer and print the label.';
   setInterval(renderGreeting, 60000);
 
   window.addEventListener('online', () => scheduleSync(200));
@@ -1603,5 +1730,6 @@
   window.JimApp = { runCommand, findItems, renderLabel, renderDrawerLabel, printItem, connectPrinter, syncNow, handleLink, drawerCfg, saveDrawerCfg, itemLink,
     get items() { return items; }, get activity() { return activity; }, printer, settings };
 
+  switchTab('items');
   render(); updatePrinterUi(); updateSyncUi(); scheduleSync(300); checkHash();
 })();

@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0b0b0d" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#002a55" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#04172e" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Waldo Supply">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -242,67 +242,227 @@
   .scanbox { position: relative; border-radius: 16px; overflow: hidden; background: #000; aspect-ratio: 1 / 1; max-height: 52vh; }
   .scanbox video { width: 100%; height: 100%; object-fit: cover; display: block; }
   .scan-frame { position: absolute; inset: 18%; border: 3px solid rgba(255,255,255,.9); border-radius: 18px; box-shadow: 0 0 0 999px rgba(0,0,0,.25); pointer-events: none; }
+  /* ===================== v12 theme: WaldoAir app bar + tabs + rich rows ===================== */
+  :root {
+    --bg: #f2f4f8; --surface: #ffffff; --surface-2: #f3f5f9; --ink: #0d1726; --ink-2: #334155; --muted: #6b7686;
+    --line: #e2e7ef; --line-2: #edf0f5;
+    --navy: #003469; --sky: #008fd4; --red: #c12026;
+    --accent: #0a74c2; --accent-2: #003469; --accent-soft: #e7f2fb; --accent-ink: #075a97;
+    --grad: linear-gradient(135deg, #0a7fc4 0%, #003469 100%);
+    --bar: linear-gradient(165deg, #002a55 0%, #003a75 55%, #0a6cb0 100%);
+    --shadow-sm: 0 1px 2px rgba(13,23,38,.05);
+    --shadow: 0 1px 2px rgba(13,23,38,.05), 0 10px 28px -12px rgba(13,23,38,.18);
+    --radius: 18px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0f17; --surface: #121a26; --surface-2: #18212f; --ink: #eef3fa; --ink-2: #c7d0dc; --muted: #8592a3;
+      --line: #223042; --line-2: #1b2636;
+      --accent: #4fb3f0; --accent-soft: rgba(79,179,240,.12); --accent-ink: #8ccdf6;
+      --grad: linear-gradient(135deg, #2a9ee6 0%, #0b4a8c 100%);
+      --bar: linear-gradient(165deg, #04172e 0%, #072a4f 60%, #0b4a80 100%);
+      --shadow-sm: none; --shadow: 0 0 0 1px rgba(255,255,255,.02);
+    }
+  }
+  body { background: var(--bg); }
+  .appbar { position: sticky; top: 0; z-index: 20; background: var(--bar); color: #fff;
+    padding: calc(10px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+    box-shadow: 0 6px 24px -10px rgba(0,30,70,.55); }
+  .appbar-row { max-width: 680px; margin: 0 auto; display: flex; align-items: center; gap: 4px; }
+  .appbar .logo { width: 40px; height: 36px; border-radius: 11px; background: rgba(255,255,255,.1); box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); margin-right: 8px; }
+  .titles { flex: 1; min-width: 0; }
+  .app-title { font-size: 18px; font-weight: 750; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .app-status { display: flex; gap: 10px; margin-top: 1px; }
+  .mini { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; padding: 0; color: rgba(255,255,255,.78); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .mini .dot { width: 6px; height: 6px; background: rgba(255,255,255,.5); opacity: 1; box-shadow: none; }
+  .mini .dot.ok { background: #4ade80; box-shadow: 0 0 0 3px rgba(74,222,128,.22); }
+  .mini .dot.warn { background: #fbbf24; box-shadow: 0 0 0 3px rgba(251,191,36,.22); }
+  .mini .dot.bad { background: #f87171; box-shadow: 0 0 0 3px rgba(248,113,113,.22); }
+  .bar-btn { width: 40px; height: 40px; border-radius: 12px; border: 0; background: transparent; color: #fff; display: grid; place-items: center; flex: none; }
+  .bar-btn:active { background: rgba(255,255,255,.14); }
+  .tabs { position: relative; max-width: 680px; margin: 8px auto 0; display: grid; grid-template-columns: repeat(3, 1fr); }
+  .tab { border: 0; background: none; color: rgba(255,255,255,.66); display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 6px 0 10px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .tab.on { color: #fff; }
+  .tab-ink { position: absolute; bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: #fff; width: calc(100% / 3 - 36px);
+    left: 18px; transition: transform .28s cubic-bezier(.2,.8,.2,1); }
+  @media (max-width: 380px) { .appbar .logo { display: none; } .bar-btn { width: 36px; } }
+
+  .wrap { padding-top: 4px; }
+  .hero { padding: 18px 2px 14px; }
+  .greet { font-size: 28px; margin: 4px 0 2px; }
+  .greet .name { background: none; -webkit-background-clip: initial; background-clip: initial; color: var(--accent); }
+  .stats { margin-top: 14px; }
+  .stat { border-radius: 16px; padding: 10px 14px; }
+  .stat b { font-size: 21px; color: var(--ink); }
+
+  .assistant { border-radius: 22px; padding: 16px; align-items: stretch; gap: 10px; }
+  .assistant::before { inset: -60% -10% auto; background: radial-gradient(closest-side, color-mix(in srgb, var(--sky) 16%, transparent), transparent); }
+  .assist-row { display: flex; align-items: center; gap: 14px; position: relative; }
+  #micBtn { width: 64px; height: 64px; flex: none; background: var(--grad); box-shadow: 0 10px 26px -8px rgba(0,80,160,.55), inset 0 1px 0 rgba(255,255,255,.25); }
+  #micBtn::after { inset: -6px; border-color: color-mix(in srgb, var(--sky) 35%, transparent); }
+  #micBtn svg { width: 26px; height: 26px; }
+  .assist-text { min-width: 0; }
+  .assist-text .mic-label { font-size: 16px; font-weight: 700; color: var(--ink); text-align: left; }
+  .assist-text .hint { text-align: left; margin-top: 2px; }
+  #transcript { text-align: left; min-height: 0; }
+  #transcript:empty { display: none; }
+  .send { background: var(--navy); color: #fff; }
+  #answer { border-color: color-mix(in srgb, var(--accent) 20%, transparent); }
+
+  .section-head { margin: 24px 2px 10px; }
+  .list-meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); font-weight: 600; margin: -2px 4px 10px; }
+
+  /* rich item rows */
+  .item { display: grid; grid-template-columns: auto 1fr auto; gap: 0 12px; align-items: start; padding: 14px 12px 14px 14px; cursor: pointer; border-radius: var(--radius); }
+  .avatar { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; color: #fff; flex: none;
+    box-shadow: inset 0 -2px 0 rgba(0,0,0,.12); }
+  .item-main { min-width: 0; }
+  .item .name { font-size: 16.5px; font-weight: 700; line-height: 1.25; }
+  .qline { margin-top: 3px; font-size: 13.5px; color: var(--muted); }
+  .qline b { color: var(--ink); font-size: 15px; font-weight: 750; font-variant-numeric: tabular-nums; }
+  .qline i { font-style: normal; color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+  .tag { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 7px; font-size: 12px; font-weight: 700; letter-spacing: .01em; }
+  .tag.drawer { color: #fff; }
+  .tag.soft { background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line-2); font-weight: 600; }
+  .tag.mixed { background: color-mix(in srgb, var(--navy) 10%, transparent); color: var(--accent-ink); }
+  .star { width: 34px; height: 34px; border: 0; background: none; border-radius: 10px; color: color-mix(in srgb, var(--muted) 70%, transparent); display: grid; place-items: center; margin: -4px -4px 0 0; }
+  .star.on { color: #f5a524; }
+  .star:active { background: var(--surface-2); }
+  .parts { grid-column: 2 / -1; margin-top: 8px; }
+  .swipe-bg.print { background: var(--grad); }
+
+  /* drawers tab */
+  .dcard { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 14px;
+    display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; align-items: center; }
+  .dnum { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 17px; }
+  .dname { font-weight: 750; font-size: 16px; }
+  .dsub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .dacts { display: flex; gap: 6px; }
+
+  /* item sheet quick bar */
+  .quickbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .qty.big { height: 44px; border-radius: 12px; }
+  .qty.big button { width: 42px; height: 42px; font-size: 22px; }
+  .qty.big span { min-width: 3ch; font-size: 18px; }
+
+  .radio { display: flex !important; flex-direction: row !important; justify-content: space-between; align-items: center; padding: 13px 14px;
+    color: var(--ink) !important; font-size: 15px !important; font-weight: 500 !important; border-bottom: 1px solid var(--line); }
+  .radio:last-child { border-bottom: 0; }
+  .radio input { width: 20px; height: 20px; padding: 0; accent-color: var(--accent); box-shadow: none !important; }
+
+  .fab { width: 60px; height: 60px; border-radius: 50%; background: var(--red); color: #fff; box-shadow: 0 12px 28px -8px rgba(193,32,38,.6); }
+  .btn.primary { background: var(--navy); color: #fff; }
+  @media (prefers-color-scheme: dark) { .btn.primary { background: var(--accent); color: #04172e; } .send { background: var(--accent); color: #04172e; } }
+  .switch input:checked { background: var(--sky); }
+  .toast { bottom: calc(96px + env(safe-area-inset-bottom)); }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header class="topbar">
-    <div class="brand">
-      <div class="logo"><svg viewBox="0 0 62 50" width="26" height="21" role="img" aria-label="WaldoAir"><polygon points="0,0 31,0 15.5,25" fill="#003469"/><polygon points="31,0 62,0 46.5,25" fill="#c12026"/><polygon points="15.5,25 31,50 0,50" fill="#008fd4"/><polygon points="46.5,25 62,50 31,50" fill="#808285"/><polygon points="31,0 46.5,25 31,50 15.5,25" fill="#ffffff"/><polygon points="31.00,18.40 32.63,22.76 37.28,22.96 33.64,25.86 34.88,30.34 31.00,27.77 27.12,30.34 28.36,25.86 24.72,22.96 29.37,22.76" fill="#231f20"/></svg></div>
-      <span>Waldo Supply</span>
+<header class="appbar">
+  <div class="appbar-row">
+    <div class="logo"><svg viewBox="0 0 62 50" width="26" height="21" role="img" aria-label="WaldoAir"><polygon points="0,0 31,0 15.5,25" fill="#003469"/><polygon points="31,0 62,0 46.5,25" fill="#c12026"/><polygon points="15.5,25 31,50 0,50" fill="#008fd4"/><polygon points="46.5,25 62,50 31,50" fill="#808285"/><polygon points="31,0 46.5,25 31,50 15.5,25" fill="#ffffff"/><polygon points="31.00,18.40 32.63,22.76 37.28,22.96 33.64,25.86 34.88,30.34 31.00,27.77 27.12,30.34 28.36,25.86 24.72,22.96 29.37,22.76" fill="#231f20"/></svg></div>
+    <div class="titles">
+      <div class="app-title">Waldo Supply</div>
+      <div class="app-status">
+        <button class="mini" id="printerPill" title="Printer"><span class="dot" id="printerDot"></span><span id="printerText">Printer</span></button>
+        <button class="mini" id="syncPill" title="Sync"><span class="dot" id="syncDot"></span><span id="syncText">Sync</span></button>
+      </div>
     </div>
-    <button class="chip" id="printerPill" title="Printer"><span class="dot" id="printerDot"></span><span id="printerText">Printer</span></button>
-    <button class="chip" id="syncPill" title="Sync"><span class="dot" id="syncDot"></span><span id="syncText">Sync</span></button>
-    <button class="icon-btn" id="settingsBtn" aria-label="Settings"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
-  </header>
-
-  <section class="hero">
-    <div class="eyebrow"><span id="greetTime">Good morning</span><span class="sep"></span><span id="greetDate"></span></div>
-    <h1 class="greet">Hello<span id="greetComma">, </span><span class="name" id="greetName"></span>.</h1>
-    <p class="sub" id="greetSub">What came in today?</p>
-    <button class="set-name" id="setNameBtn" hidden>Add your name →</button>
-    <div class="stats">
-      <div class="stat"><b id="statItems">0</b><span>Items</span></div>
-      <div class="stat"><b id="statUnits">0</b><span>Units</span></div>
-      <div class="stat"><b id="statDrawers">0</b><span>Drawers used</span></div>
-    </div>
-  </section>
-
-  <section class="assistant">
-    <button id="micBtn" aria-label="Speak"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v4"/></svg></button>
-    <div class="mic-label" id="micLabel">Tap to speak</div>
-    <div id="transcript"></div>
-    <form class="composer" id="cmdForm" autocomplete="off">
-      <input id="cmdInput" enterkeyhint="send" placeholder="Tell Waldo what came in…">
-      <button class="scan-btn" type="button" id="scanBtn" aria-label="Scan a label"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="4" height="4"/><rect x="13" y="13" width="4" height="4"/><path d="M13 7h4v2M7 15v2h2"/></svg></button>
-      <button class="send" type="submit" aria-label="Send"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button>
-    </form>
-    <div class="hint" id="voiceHint">Try “Niimbot product manual” — I’ll pick a drawer and print the label.</div>
-    <div id="answer" role="status" aria-live="polite"></div>
-  </section>
-
-  <section id="activityWrap" hidden>
-    <div class="section-head"><h2>Recent activity</h2><button class="link" id="activityMore" hidden>Show all</button></div>
-    <div class="activity-card"><div class="act-summary" id="activitySummary"></div><div id="activityList"></div></div>
-  </section>
-
-  <div class="section-head"><h2>Inventory</h2><span class="count" id="count"></span></div>
-  <div class="search">
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-    <input id="filter" type="search" placeholder="Search items or drawers">
+    <button class="bar-btn" type="button" id="scanBtn" aria-label="Scan a label"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13 8v8M16.5 8v8"/></svg></button>
+    <button class="bar-btn" type="button" id="sortBtn" aria-label="Sort"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M3.5 16.5L7 20l3.5-3.5"/><path d="M17 20V4M13.5 7.5L17 4l3.5 3.5"/></svg></button>
+    <button class="bar-btn" type="button" id="searchBtn" aria-label="Search"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button>
+    <button class="bar-btn" id="settingsBtn" aria-label="Settings"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
   </div>
-  <div class="swipe-hint">Swipe an item right to print · left to remove</div>
-  <div class="list" id="list"></div>
-</div>
+  <nav class="tabs" role="tablist">
+    <button class="tab on" role="tab" data-tab="items"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4"/></svg><span>Items</span></button>
+    <button class="tab" role="tab" data-tab="drawers"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 12h18"/><path d="M10 8h4M10 16h4"/></svg><span>Drawers</span></button>
+    <button class="tab" role="tab" data-tab="activity"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span>Activity</span></button>
+    <span class="tab-ink" id="tabInk"></span>
+  </nav>
+</header>
 
-<button class="fab" id="addBtn" aria-label="Add item"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+<main class="wrap">
+  <section data-pane="items">
+    <section class="hero">
+      <div class="eyebrow"><span id="greetTime">Good morning</span><span class="sep"></span><span id="greetDate"></span></div>
+      <h1 class="greet">Hello<span id="greetComma">, </span><span class="name" id="greetName"></span>.</h1>
+      <p class="sub" id="greetSub">What came in today?</p>
+      <button class="set-name" id="setNameBtn" hidden>Add your name →</button>
+      <div class="stats">
+        <div class="stat"><b id="statItems">0</b><span>Items</span></div>
+        <div class="stat"><b id="statUnits">0</b><span>Units</span></div>
+        <div class="stat"><b id="statDrawers">0</b><span>Drawers used</span></div>
+      </div>
+    </section>
+
+    <section class="assistant">
+      <div class="assist-row">
+        <button id="micBtn" aria-label="Speak"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v4"/></svg></button>
+        <div class="assist-text">
+          <div class="mic-label" id="micLabel">Tap to speak</div>
+          <div class="hint" id="voiceHint">Say an item name — I’ll pick the drawer and print the label.</div>
+        </div>
+      </div>
+      <div id="transcript"></div>
+      <form class="composer" id="cmdForm" autocomplete="off">
+        <input id="cmdInput" enterkeyhint="send" placeholder="Tell Waldo what came in…">
+        <button class="send" type="submit" aria-label="Send"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button>
+      </form>
+      <div id="answer" role="status" aria-live="polite"></div>
+    </section>
+
+    <div class="section-head"><h2>Inventory</h2><span class="count" id="count"></span></div>
+    <div class="search" id="searchBox">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="filter" type="search" placeholder="Search items or drawers">
+    </div>
+    <div class="list-meta"><span id="sortLabel">Sorted by drawer</span><span>Swipe → print · ← remove</span></div>
+    <div class="list" id="list"></div>
+  </section>
+
+  <section data-pane="drawers" hidden>
+    <div class="section-head"><h2>Drawers</h2><button class="link" id="editDrawersBtn">Edit setup</button></div>
+    <div class="list" id="drawerList"></div>
+  </section>
+
+  <section data-pane="activity" hidden>
+    <section id="activityWrap">
+      <div class="section-head"><h2>Recent activity</h2><button class="link" id="activityMore" hidden>Show all</button></div>
+      <div class="activity-card"><div class="act-summary" id="activitySummary"></div><div id="activityList"></div></div>
+    </section>
+  </section>
+</main>
+
+<button class="fab" id="addBtn" aria-label="Add item"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
 <div class="toast" id="toast"></div>
 <div class="snack" id="snack" role="status"><span id="snackText"></span><button id="snackBtn">Undo</button></div>
+
+<!-- Sort -->
+<dialog id="sortDlg">
+  <form class="dlg" method="dialog" id="sortForm">
+    <h2>Sort items</h2>
+    <div class="group">
+      <label class="radio">Drawer<input type="radio" name="sortBy" value="drawer"></label>
+      <label class="radio">Name (A–Z)<input type="radio" name="sortBy" value="name"></label>
+      <label class="radio">Newest first<input type="radio" name="sortBy" value="newest"></label>
+      <label class="radio">Quantity (most first)<input type="radio" name="sortBy" value="qty"></label>
+    </div>
+    <div class="group"><label class="switch">Starred items on top<input type="checkbox" name="starFirst"></label></div>
+    <div class="btns"><button class="btn primary" value="done">Done</button></div>
+  </form>
+</dialog>
 
 <!-- Add / edit item -->
 <dialog id="itemDlg">
   <form class="dlg" method="dialog" id="itemForm">
     <h2 id="itemTitle">Add item</h2>
+    <div class="quickbar" id="quickBar" hidden>
+      <div class="qty big"><button type="button" id="qMinus" aria-label="Used one">−</button><span id="qVal">1</span><button type="button" id="qPlus" aria-label="Add one">+</button></div>
+      <button class="btn" type="button" id="qPrint">Print</button>
+      <button class="btn" type="button" id="qLocate">Locate</button>
+    </div>
     <label>Item name<input name="name" required></label>
     <div class="row2">
       <label>Drawer<input name="drawer" required placeholder="Drawer 3"></label>
@@ -400,7 +560,7 @@
 <!-- Settings / sync -->
 <dialog id="settingsDlg">
   <form class="dlg" method="dialog" id="settingsForm">
-    <h2>Settings <span class="kv" style="font-weight:500">· v11</span></h2>
+    <h2>Settings <span class="kv" style="font-weight:500">· v12</span></h2>
     <label>Your name<input name="userName" autocomplete="given-name" placeholder="e.g. Jim" maxlength="40"></label>
     <button class="settings-link" type="button" id="drawersBtn"><span>Drawers &amp; categories<small>Which drawer holds what, mixed drawers, drawer labels</small></span><span aria-hidden="true">›</span></button>
     <div class="section-label">Assistant</div>
@@ -463,9 +623,9 @@
   </div>
 </dialog>
 
-<script src="niimbluelib.js?v=11"></script>
-<script src="qr.js?v=11"></script>
-<script src="parser.js?v=11"></script>
-<script src="app.js?v=11"></script>
+<script src="niimbluelib.js?v=12"></script>
+<script src="qr.js?v=12"></script>
+<script src="parser.js?v=12"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

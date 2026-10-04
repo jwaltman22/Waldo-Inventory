@@ -182,6 +182,64 @@
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
   .progress { height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
   .progress > div { height: 100%; width: 0; background: var(--grad); transition: width .2s; }
+  /* swipe */
+  .swipe { position: relative; border-radius: var(--radius); }
+  .swipe > .item { position: relative; z-index: 1; touch-action: pan-y; will-change: transform; }
+  .swipe-bg { position: absolute; inset: 0; border-radius: var(--radius); display: flex; align-items: center; gap: 8px; padding: 0 22px;
+    font-weight: 650; font-size: 14px; color: #fff; opacity: 0; transition: opacity .12s; }
+  .swipe-bg.print { background: var(--grad); justify-content: flex-start; }
+  .swipe-bg.del { background: var(--bad); justify-content: flex-end; }
+  .swipe.show-print .swipe-bg.print, .swipe.show-del .swipe-bg.del { opacity: .55; }
+  .swipe.armed.show-print .swipe-bg.print, .swipe.armed.show-del .swipe-bg.del { opacity: 1; }
+  .swipe-hint { font-size: 12px; color: var(--muted); text-align: center; margin: -4px 0 10px; }
+
+  /* mixed drawer parts */
+  .parts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .part { font-size: 12.5px; padding: 4px 9px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line-2); color: var(--ink-2); }
+  .part.more { color: var(--muted); border-style: dashed; }
+
+  /* composer scan button */
+  .scan-btn { width: 40px; height: 40px; border-radius: 11px; border: 0; background: transparent; color: var(--muted); display: grid; place-items: center; flex: none; margin-right: 4px; }
+  .scan-btn:active { background: var(--line-2); }
+
+  /* activity */
+  .activity-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 6px 14px 8px; }
+  .act-summary { font-size: 13px; font-weight: 600; color: var(--ink-2); padding: 8px 0 6px; border-bottom: 1px solid var(--line-2); }
+  .arow { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line-2); }
+  .arow:last-child { border-bottom: 0; }
+  .adot { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; background: var(--surface-2); color: var(--muted); }
+  .adot.stock { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+  .adot.use, .adot.remove { background: color-mix(in srgb, var(--bad) 12%, transparent); color: var(--bad); }
+  .adot.print { background: var(--accent-soft); color: var(--accent-ink); }
+  .adot.move { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+  .atext { font-size: 14px; color: var(--ink); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+  .awhen { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .link { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 600; font-size: 14px; }
+
+  /* undo snackbar */
+  .snack { position: fixed; left: 50%; bottom: calc(92px + env(safe-area-inset-bottom)); transform: translate(-50%, 12px); z-index: 60;
+    display: flex; align-items: center; gap: 14px; background: var(--ink); color: var(--bg); border-radius: 14px; padding: 10px 10px 10px 16px;
+    font-size: 14px; font-weight: 550; max-width: calc(100vw - 40px); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+    box-shadow: 0 12px 30px -10px rgba(0,0,0,.45); }
+  .snack.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  .snack button { border: 0; background: color-mix(in srgb, var(--bg) 16%, transparent); color: var(--bg); font-weight: 700; padding: 8px 12px; border-radius: 9px; }
+
+  /* drawers editor */
+  .drawer-rows { display: flex; flex-direction: column; gap: 12px; }
+  .drow { border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--surface); }
+  .drow-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .seg { display: inline-flex; background: var(--surface-2); border-radius: 10px; padding: 3px; }
+  .seg button { border: 0; background: transparent; padding: 7px 10px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .seg button.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
+  .btn.sm { height: 34px; padding: 0 10px; font-size: 13px; }
+  .settings-link { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 14px; border: 0; border-radius: 14px;
+    background: var(--surface-2); font-size: 15px; font-weight: 600; color: var(--ink); text-align: left; }
+  .settings-link small { display: block; font-weight: 500; color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+  /* scanner */
+  .scanbox { position: relative; border-radius: 16px; overflow: hidden; background: #000; aspect-ratio: 1 / 1; max-height: 52vh; }
+  .scanbox video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .scan-frame { position: absolute; inset: 18%; border: 3px solid rgba(255,255,255,.9); border-radius: 18px; box-shadow: 0 0 0 999px rgba(0,0,0,.25); pointer-events: none; }
 </style>
 </head>
 <body>
@@ -214,10 +272,16 @@
     <div id="transcript"></div>
     <form class="composer" id="cmdForm" autocomplete="off">
       <input id="cmdInput" enterkeyhint="send" placeholder="Tell Waldo what came in…">
+      <button class="scan-btn" type="button" id="scanBtn" aria-label="Scan a label"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="4" height="4"/><rect x="13" y="13" width="4" height="4"/><path d="M13 7h4v2M7 15v2h2"/></svg></button>
       <button class="send" type="submit" aria-label="Send"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button>
     </form>
     <div class="hint" id="voiceHint">Try “Niimbot product manual” — I’ll pick a drawer and print the label.</div>
     <div id="answer" role="status" aria-live="polite"></div>
+  </section>
+
+  <section id="activityWrap" hidden>
+    <div class="section-head"><h2>Recent activity</h2><button class="link" id="activityMore" hidden>Show all</button></div>
+    <div class="activity-card"><div class="act-summary" id="activitySummary"></div><div id="activityList"></div></div>
   </section>
 
   <div class="section-head"><h2>Inventory</h2><span class="count" id="count"></span></div>
@@ -225,11 +289,13 @@
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
     <input id="filter" type="search" placeholder="Search items or drawers">
   </div>
+  <div class="swipe-hint">Swipe an item right to print · left to remove</div>
   <div class="list" id="list"></div>
 </div>
 
 <button class="fab" id="addBtn" aria-label="Add item"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
 <div class="toast" id="toast"></div>
+<div class="snack" id="snack" role="status"><span id="snackText"></span><button id="snackBtn">Undo</button></div>
 
 <!-- Add / edit item -->
 <dialog id="itemDlg">
@@ -332,13 +398,15 @@
 <!-- Settings / sync -->
 <dialog id="settingsDlg">
   <form class="dlg" method="dialog" id="settingsForm">
-    <h2>Settings <span class="kv" style="font-weight:500">· v9</span></h2>
+    <h2>Settings <span class="kv" style="font-weight:500">· v10</span></h2>
     <label>Your name<input name="userName" autocomplete="given-name" placeholder="e.g. Jim" maxlength="40"></label>
+    <button class="settings-link" type="button" id="drawersBtn"><span>Drawers &amp; categories<small>Which drawer holds what, mixed drawers, drawer labels</small></span><span aria-hidden="true">›</span></button>
     <div class="section-label">Assistant</div>
     <div class="group">
       <label class="switch">Speak answers out loud<input name="speakAnswers" type="checkbox"></label>
       <label class="switch">Print labels automatically<input name="autoPrint" type="checkbox"></label>
       <label class="switch">Let me pick the drawer<input name="askDrawer" type="checkbox"></label>
+      <label class="switch">QR codes on labels<input name="qrOnLabels" type="checkbox"></label>
     </div>
     <div class="section-label">Sync</div>
     <label>Sync URL (Google Apps Script, ends in /exec)<input name="syncUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec"></label>
@@ -357,8 +425,38 @@
   </form>
 </dialog>
 
-<script src="niimbluelib.js?v=9"></script>
-<script src="parser.js?v=9"></script>
-<script src="app.js?v=9"></script>
+<!-- Drawers & categories -->
+<dialog id="drawersDlg">
+  <form class="dlg" method="dialog" id="drawersForm">
+    <h2>Drawers &amp; categories</h2>
+    <p class="kv" style="margin:0">New items go to the drawer whose words match their name. <b>Track each item</b> counts every part separately. <b>Mixed assortment</b> keeps a list of what's in the drawer (bolts, screws…) without counting. A drawer with the category <b>General</b> catches anything that doesn't match.</p>
+    <div class="drawer-rows" id="drawerRows"></div>
+    <button class="btn" type="button" id="addDrawerRow">+ Add drawer</button>
+    <div class="btns">
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" type="submit" value="save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- QR scanner -->
+<dialog id="scanDlg">
+  <div class="dlg">
+    <h2>Scan a label</h2>
+    <div class="scanbox"><video id="scanVideo" playsinline muted autoplay></video><div class="scan-frame"></div></div>
+    <div class="kv" id="scanMsg"></div>
+    <div class="btns">
+      <label class="btn" for="scanFile">Take a photo</label>
+      <input type="file" id="scanFile" accept="image/*" capture="environment" hidden>
+      <span style="flex:1"></span>
+      <button class="btn" id="scanClose">Close</button>
+    </div>
+  </div>
+</dialog>
+
+<script src="niimbluelib.js?v=10"></script>
+<script src="qr.js?v=10"></script>
+<script src="parser.js?v=10"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

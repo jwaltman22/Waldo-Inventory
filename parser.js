@@ -43,9 +43,14 @@
     print: ['reprint', 'print'],
     remove: ['remove', 'delete', 'take out', 'throw out', 'used up', 'used the last of', 'used the last'],
     list: ['list', 'show', "what's in", 'what is in', 'what do i have'],
-    add: ['add', 'just got in', 'got in', 'received', 'new', 'stock', 'put away', 'put in', 'log', 'check in', 'checked in', 'i got', 'we got'],
+    add: ['add', 'just got in', 'got in', 'just got', 'got', 'received', 'just received', 'new', 'stock', 'put away', 'put in', 'log', 'check in', 'checked in',
+      'i got', 'we got', 'bought', 'picked up', 'have'],
   };
-  const FILLER = ['a label for', 'labels for', 'label for', 'one more', 'another', 'more', 'a', 'an', 'the', 'some', 'my', 'our'];
+  const FILLER = ['a label for', 'labels for', 'label for', 'one more', 'another', 'more', 'a', 'an', 'the', 'some', 'my', 'our',
+    'brand new', 'brand-new', 'new', 'a couple of', 'couple of', 'a few', 'few'];
+  // Conversational lead-ins dropped before looking for the verb: "Okay so I just got in…", "We've also received…"
+  const LEAD = /^(?:(?:ok(?:ay)?|hey|so|um+|uh+|well|alright|and|yeah|hi|waldo)[,\s]+)*(?:(?:i|we|i've|we've|ive|weve|i have|we have|i just|we just)\s+)?(?:just\s+|also\s+|finally\s+|now\s+|then\s+)*/i;
+  const LEAD_NUM = new RegExp('^(' + Object.keys(NUMBER_WORDS).join('|') + ')\\s+(?=\\S)', 'i');
   const COUNT_TAIL = /\s+(?:do i have|do we have|are there|are left|have i got|in stock|on hand|left)\s*$/i;
 
   function startsWithWord(lower, p) {
@@ -76,6 +81,9 @@
     let raw = original.trim().replace(/[.!?]+$/, '');
     if (!raw) return { type: 'unknown', raw: original };
     raw = wordsToDigits(raw);
+    // Strip "I just…" / "we've got…" etc. when what's left starts with a known command verb.
+    const lead = raw.replace(LEAD, '');
+    if (lead !== raw && lead && Object.values(VERBS).some((vs) => vs.some((p) => startsWithWord(lead.toLowerCase(), p)))) raw = lead;
     const lower = raw.toLowerCase();
 
     // --- drawer extraction ---
@@ -95,6 +103,7 @@
     }
 
     let rest = type ? stripPrefixes(working, VERBS[type]) : working;
+    if (type === 'add' || type === 'remove') rest = stripPrefixes(rest, ['a', 'an', 'some']).replace(LEAD_NUM, (m, w) => NUMBER_WORDS[w.toLowerCase()] + ' ');
 
     // --- quantity (after verb) ---
     let quantity = 1;

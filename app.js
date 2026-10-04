@@ -144,19 +144,45 @@
     { name: 'Drawer 5', category: 'Hardware', mode: 'mixed', keywords: 'bolt, nut, screw, washer, rivet, cotter pin, safety wire, hose clamp, fastener, standoff' },
     { name: 'Drawer 6', category: 'General', mode: 'tracked', keywords: '' },
   ];
-  function drawerCfg() {
+  /** The shared config row holds { drawers: [...], aliases: { heard → real name } } (older versions: just the drawers array). */
+  function cfgData() {
     const c = items.find((i) => i.id === CONFIG_ID && !i.deleted);
-    if (c) { try { const v = JSON.parse(c.notes); if (Array.isArray(v) && v.length) return v; } catch (e) { /* fall back */ } }
-    return DEFAULT_DRAWERS;
+    if (c) {
+      try {
+        const v = JSON.parse(c.notes);
+        if (Array.isArray(v)) return { drawers: v, aliases: {} };
+        if (v && typeof v === 'object') return { drawers: Array.isArray(v.drawers) ? v.drawers : [], aliases: v.aliases || {} };
+      } catch (e) { /* fall back */ }
+    }
+    return { drawers: [], aliases: {} };
   }
-  function saveDrawerCfg(list) {
+  function drawerCfg() {
+    const d = cfgData().drawers;
+    return d.length ? d : DEFAULT_DRAWERS;
+  }
+  function saveDrawerCfg(list, aliases) {
+    writeCfg({ drawers: list, aliases: aliases || cfgData().aliases });
+  }
+  /** Names Waldo has been corrected on: what it heard → what the thing is really called. */
+  const getAliases = () => cfgData().aliases;
+  function applyAlias(name) {
+    const a = getAliases()[normalize(name)];
+    return a || name;
+  }
+  function learnAlias(heard, real) {
+    const k = normalize(heard);
+    if (!k || k === normalize(real)) return;
+    const aliases = Object.assign({}, getAliases(), { [k]: real });
+    writeCfg({ drawers: cfgData().drawers.length ? cfgData().drawers : DEFAULT_DRAWERS, aliases });
+  }
+  function writeCfg(data) {
     let c = items.find((i) => i.id === CONFIG_ID);
     if (!c) {
       c = { id: CONFIG_ID, name: 'Waldo Supply drawer setup (managed by the app)', drawer: '', quantity: 0, sku: 'CONFIG', category: '',
         notes: '', createdAt: Date.now(), lastPrintedAt: null, deleted: false };
       items.push(c);
     }
-    c.deleted = false; c.notes = JSON.stringify(list); touch(c); saveItems();
+    c.deleted = false; c.notes = JSON.stringify(data); touch(c); saveItems();
   }
   const isGeneral = (d) => !!d && /^(general|misc|miscellaneous|other|uncategorized)$/i.test(String(d.category || '').trim());
   const cfgFor = (drawer) => drawerCfg().find((d) => d.name.toLowerCase() === String(drawer || '').trim().toLowerCase()) || null;
@@ -307,6 +333,7 @@
       return answer('Nice to meet you, ' + settings.userName + '.');
     }
     const intent = parse(text);
+    for (const k of ['name', 'query']) if (intent[k]) intent[k] = applyAlias(intent[k]);
     switch (intent.type) {
       case 'add': {
         if (!intent.name) return answer('What item should I add? Try: “add WAC-47 lens drawer 3”.');
@@ -443,8 +470,9 @@
     };
     const acts = [];
     if (pick.how === 'general') {
+      acts.push({ label: 'Fix name', run: () => openItem(item, true) });
       for (const d of drawerCfg()) if (!isGeneral(d) && d.category) acts.push({ label: d.category, run: () => moveToCategory(item, d) });
-    } else if (assigned) acts.push({ label: 'Use a different drawer', run: () => openItem(item) });
+    } else acts.push({ label: 'Fix name or drawer', run: () => openItem(item, true) });
     acts.push(undo);
     answer(msg, spoken, acts);
     if (settings.autoPrint && printer.connected) printItem(item, 1, true);
@@ -1332,8 +1360,10 @@
   // ---------------------------------------------------------------- UI: dialogs
   let editing = null;
   let drawerTouched = false;
-  function openItem(it) {
+  let editingOrigName = '';
+  function openItem(it, fixName) {
     editing = it || null;
+    editingOrigName = it ? it.name : '';
     drawerTouched = false;
     const f = $('itemForm');
     $('itemTitle').textContent = it ? 'Edit item' : 'Add item';
@@ -1348,7 +1378,7 @@
     if (it && !isMixed(it)) $('qVal').textContent = it.quantity;
     updateItemPreview();
     $('itemDlg').showModal();
-    if (!it) setTimeout(() => f.name.focus(), 50);
+    if (!it || fixName) setTimeout(() => { f.name.focus(); if (fixName) f.name.select(); }, 60);
   }
   function formItem() {
     const f = $('itemForm');
@@ -1385,8 +1415,19 @@
     if (editing) {
       Object.assign(editing, { name: v.name, drawer: v.drawer, quantity: v.quantity || 1, sku: v.sku, category: v.category, notes: v.notes });
       touch(editing); saveItems(); target = editing;
-      log('edit', 'Edited ' + target.name);
-      toast('Saved');
+      const renamed = editingOrigName && normalize(editingOrigName) !== normalize(target.name);
+      if (renamed) {
+        learnAlias(editingOrigName, target.name);
+        log('edit', 'Renamed “' + editingOrigName + '” → ' + target.name);
+        answer('Saved as ' + target.name + '. Next time I hear “' + editingOrigName + '”, I’ll know you mean ' + target.name + '.', 'Got it. ' + target.name + '.');
+        if (action !== 'saveprint' && target.lastPrintedAt) {
+          if (printer.connected) printItem(target, 1, true);
+          else { queuePrint(target.id); toast('New label will print when the printer connects'); }
+        }
+      } else {
+        log('edit', 'Edited ' + target.name);
+        toast('Saved');
+      }
     } else if ((cfgFor(v.drawer) || {}).mode === 'mixed') {
       stockIn(v.name, v.drawer, 1);
       return;
@@ -1727,7 +1768,7 @@
   }
 
   // test hooks (harmless in production)
-  window.JimApp = { runCommand, findItems, renderLabel, renderDrawerLabel, printItem, connectPrinter, syncNow, handleLink, drawerCfg, saveDrawerCfg, itemLink,
+  window.JimApp = { applyAlias, getAliases, runCommand, findItems, renderLabel, renderDrawerLabel, printItem, connectPrinter, syncNow, handleLink, drawerCfg, saveDrawerCfg, itemLink,
     get items() { return items; }, get activity() { return activity; }, printer, settings };
 
   switchTab('items');

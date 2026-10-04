@@ -21,7 +21,7 @@
   };
 
   const DEFAULT_SETTINGS = {
-    syncUrl: '', syncKey: '', speakAnswers: true, autoPrint: true, askDrawer: false, userName: '', qrOnLabels: true,
+    syncUrl: '', syncKey: '', speakAnswers: true, autoPrint: true, askDrawer: false, userName: '', qrOnLabels: true, voiceName: '', voiceRate: 1,
     labelSize: '50x30', customW: 50, customH: 30, density: 3,
   };
   let settings = Object.assign({}, DEFAULT_SETTINGS, LS.get('jim.settings', {}));
@@ -196,12 +196,37 @@
   let recognizer = null;
   let listening = false;
 
-  function speak(text) {
-    if (!settings.speakAnswers || !('speechSynthesis' in window)) return;
+  // ---- voice choice: the phone's own text-to-speech voices
+  const NOVELTY = /^(albert|bad news|bahh|bells|boing|bubbles|cellos|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|fred|junior|kathy|ralph|grandma|grandpa|eddy|flo|reed|rocko|sandy|shelley)\b/i;
+  const NICE = ['ava', 'zoe', 'samantha', 'allison', 'susan', 'serena', 'karen', 'moira', 'tessa', 'evan', 'nathan', 'tom', 'daniel', 'google us english', 'microsoft aria', 'microsoft jenny'];
+  function voiceRank(v) {
+    const n = v.name.toLowerCase();
+    let r = 0;
+    if (/premium/.test(n)) r += 300; else if (/enhanced|natural|neural|online/.test(n)) r += 200;
+    const i = NICE.findIndex((k) => n.startsWith(k));
+    if (i >= 0) r += 100 - i;
+    if (/^en[-_]us/i.test(v.lang)) r += 5;
+    return r;
+  }
+  function englishVoices() {
+    if (!('speechSynthesis' in window)) return [];
+    return speechSynthesis.getVoices().filter((v) => /^en([-_]|$)/i.test(v.lang) && !NOVELTY.test(v.name))
+      .sort((a, b) => voiceRank(b) - voiceRank(a) || a.name.localeCompare(b.name));
+  }
+  function chosenVoice() {
+    const list = englishVoices();
+    if (settings.voiceName) { const v = list.find((x) => x.name === settings.voiceName); if (v) return v; }
+    return list[0] || null; // best-ranked English voice
+  }
+
+  function speak(text, force) {
+    if ((!settings.speakAnswers && !force) || !('speechSynthesis' in window)) return;
     try {
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'en-US'; u.rate = 1.0;
+      const v = chosenVoice();
+      if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-US';
+      u.rate = Math.min(1.4, Math.max(0.7, +settings.voiceRate || 1));
       speechSynthesis.speak(u);
     } catch (e) { /* ignore */ }
   }
@@ -1317,6 +1342,8 @@
     f.syncUrl.value = settings.syncUrl; f.syncKey.value = settings.syncKey;
     f.speakAnswers.checked = !!settings.speakAnswers; f.autoPrint.checked = !!settings.autoPrint; f.askDrawer.checked = !!settings.askDrawer;
     f.qrOnLabels.checked = settings.qrOnLabels !== false;
+    fillVoiceList();
+    f.voiceRate.value = settings.voiceRate || 1;
     updateSyncUi();
     $('settingsDlg').showModal();
   }
@@ -1333,6 +1360,7 @@
     settings.userName = f.userName.value.trim();
     settings.speakAnswers = f.speakAnswers.checked; settings.autoPrint = f.autoPrint.checked; settings.askDrawer = f.askDrawer.checked;
     settings.qrOnLabels = f.qrOnLabels.checked;
+    settings.voiceName = f.voiceName.value; settings.voiceRate = +f.voiceRate.value || 1;
     saveSettings(); LS.set('jim.items', items);
     renderGreeting();
     scheduleSync(100);
@@ -1513,6 +1541,31 @@
     handleLink(h);
   }
   window.addEventListener('hashchange', checkHash);
+
+  function fillVoiceList() {
+    const sel = $('settingsForm').voiceName;
+    const list = englishVoices();
+    sel.textContent = '';
+    const auto = document.createElement('option');
+    auto.value = ''; auto.textContent = list.length ? 'Automatic (' + list[0].name + ')' : 'Phone default';
+    sel.appendChild(auto);
+    for (const v of list) {
+      const o = document.createElement('option');
+      o.value = v.name;
+      o.textContent = v.name + (v.lang && !/^en[-_]us/i.test(v.lang) ? ' · ' + v.lang.replace('_', '-') : '');
+      sel.appendChild(o);
+    }
+    sel.value = list.some((v) => v.name === settings.voiceName) ? settings.voiceName : '';
+  }
+  if ('speechSynthesis' in window) speechSynthesis.addEventListener && speechSynthesis.addEventListener('voiceschanged', () => { if ($('settingsDlg').open) fillVoiceList(); });
+  $('voiceTest').onclick = () => {
+    const f = $('settingsForm');
+    const keep = { voiceName: settings.voiceName, voiceRate: settings.voiceRate };
+    settings.voiceName = f.voiceName.value; settings.voiceRate = +f.voiceRate.value || 1;
+    const nm = (f.userName.value || '').trim();
+    speak((nm ? 'Hi ' + nm + '. ' : 'Hi. ') + 'Put AA batteries in Drawer 1. Printing label.', true);
+    Object.assign(settings, keep);
+  };
 
   $('activityMore').onclick = () => { activityAll = !activityAll; renderActivity(); };
 

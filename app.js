@@ -411,6 +411,11 @@
       settings.userName = nm[1].trim().replace(/\b([a-z])/g, (c) => c.toUpperCase()); saveSettings(); renderGreeting();
       return answer('Nice to meet you, ' + settings.userName + '.');
     }
+    if (/^\s*(?:please\s+)?(?:cancel|clear|stop|delete|forget)\s+(?:all\s+)?(?:the\s+)?(?:waiting\s+|pending\s+|queued\s+)?(?:prints?|printing|labels?|print\s+(?:jobs?|queue)|queue)\b/i.test(text)) {
+      const n = printQueue.length;
+      cancelQueued('all');
+      return answer(n ? 'Canceled ' + n + ' waiting label' + (n === 1 ? '' : 's') + '.' : 'Nothing was waiting to print.');
+    }
     let intent = null;
     let viaAi = false;
     if (aiUsable()) {
@@ -673,6 +678,38 @@
     if (typeof entry !== 'string' || !printQueue.includes(entry)) printQueue.push(entry);
     LS.set('jim.printQueue', printQueue); updatePrinterUi();
   }
+  function queueLabel(e) {
+    if (typeof e === 'string') {
+      const it = items.find((i) => i.id === e);
+      return it ? { name: it.name, sub: it.drawer + (it.deleted ? ' · removed' : '') } : { name: 'Item label', sub: '' };
+    }
+    if (e && e.v) return { name: e.v.name, sub: e.v.drawer + ' · mixed' };
+    if (e && e.d) return { name: 'Drawer label', sub: e.d };
+    return { name: 'Label', sub: '' };
+  }
+  function cancelQueued(index) {
+    const gone = index === 'all' ? printQueue.length : 1;
+    if (index === 'all') printQueue = []; else printQueue.splice(index, 1);
+    LS.set('jim.printQueue', printQueue);
+    if (gone) log('remove', 'Canceled ' + gone + ' waiting label' + (gone > 1 ? 's' : ''));
+    updatePrinterUi();
+  }
+  function renderQueue() {
+    const box = $('queueBox');
+    if (!box) return;
+    box.hidden = !printQueue.length;
+    $('queueTitle').textContent = printQueue.length + ' label' + (printQueue.length === 1 ? '' : 's') + ' waiting to print';
+    const root = $('queueList'); root.textContent = '';
+    printQueue.forEach((e, i) => {
+      const L = queueLabel(e);
+      const row = el('div', 'qrow');
+      const t = el('div', 'qtxt', L.name); if (L.sub) t.appendChild(el('small', null, L.sub));
+      const x = el('button', null, '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Cancel this label');
+      x.onclick = () => cancelQueued(i);
+      row.append(t, x); root.appendChild(row);
+    });
+  }
+
   async function flushPrintQueue() {
     while (printQueue.length && printer.connected) {
       const e = printQueue[0];
@@ -1054,6 +1091,7 @@
     $('findHelp').hidden = printer.connected;
     $('disconnectBtn').hidden = !printer.connected;
     $('testPrintBtn').disabled = !printer.connected || printer.busy;
+    renderQueue();
     renderGreeting();
   }
 
@@ -1142,8 +1180,9 @@
     $('setNameBtn').hidden = !!name;
     const n = live().length;
     $('greetSub').textContent = !n ? 'Ready when you are. What came in today?'
-      : printQueue.length ? printQueue.length + ' label' + (printQueue.length > 1 ? 's are' : ' is') + ' waiting for the printer.'
+      : printQueue.length ? printQueue.length + ' label' + (printQueue.length > 1 ? 's are' : ' is') + ' waiting for the printer — tap to review'
       : 'What came in today?';
+    $('greetSub').classList.toggle('tappable', !!printQueue.length);
   }
   function renderStats() {
     const all = live();
@@ -1593,6 +1632,11 @@
   $('testPrintBtn').onclick = () => printItem(Object.assign({}, SAMPLE, { name: 'Test label', drawer: 'Drawer 1' }));
   $('printerClose').onclick = () => $('printerDlg').close();
   $('printerPill').onclick = openPrinter;
+  $('greetSub').onclick = () => { if (printQueue.length) openPrinter(); };
+  $('cancelQueue').onclick = () => {
+    const n = printQueue.length;
+    cancelQueued('all'); toast('Canceled ' + n + ' waiting label' + (n === 1 ? '' : 's'));
+  };
 
   // settings dialog
   function openSettings() {

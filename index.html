@@ -351,6 +351,13 @@
   .radio { display: flex !important; flex-direction: row !important; justify-content: space-between; align-items: center; padding: 13px 14px;
     color: var(--ink) !important; font-size: 15px !important; font-weight: 500 !important; border-bottom: 1px solid var(--line); }
   .radio:last-child { border-bottom: 0; }
+  .qrow { display: flex; align-items: center; gap: 10px; padding: 11px 8px 11px 14px; border-bottom: 1px solid var(--line); font-size: 15px; }
+  .qrow:last-child { border-bottom: 0; }
+  .qrow .qtxt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .qrow .qtxt small { color: var(--muted); font-size: 12.5px; margin-left: 6px; }
+  .qrow button { width: 34px; height: 34px; border: 0; border-radius: 10px; background: transparent; color: var(--bad); font-size: 18px; font-weight: 700; }
+  .qrow button:active { background: var(--surface-2); }
+  #greetSub.tappable { cursor: pointer; color: var(--warn); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
   .radio input { width: 20px; height: 20px; padding: 0; accent-color: var(--accent); box-shadow: none !important; }
 
   .fab { width: 60px; height: 60px; border-radius: 50%; background: var(--red); color: #fff; box-shadow: 0 12px 28px -8px rgba(193,32,38,.6); }
@@ -509,6 +516,11 @@
       <b>Or:</b> use <i>Label image</i> on any item and print it from the NIIMBOT app.
     </div>
     <div id="printerInfo" class="kv">Not connected.</div>
+    <div id="queueBox" hidden>
+      <div class="section-label" id="queueTitle">Waiting to print</div>
+      <div class="group" id="queueList"></div>
+      <div class="btns" style="justify-content:flex-start;margin-top:8px"><button class="btn danger" type="button" id="cancelQueue">Cancel all prints</button></div>
+    </div>
     <div class="note" id="niimbotAppNote">
       If the NIIMBOT app is connected to the printer, close it (or turn its Bluetooth connection off) first — the printer only talks to one app at a time.
     </div>
@@ -561,7 +573,7 @@
 <!-- Settings / sync -->
 <dialog id="settingsDlg">
   <form class="dlg" method="dialog" id="settingsForm">
-    <h2>Settings <span class="kv" style="font-weight:500">· v14</span></h2>
+    <h2>Settings <span class="kv" style="font-weight:500">· v15</span></h2>
     <label>Your name<input name="userName" autocomplete="given-name" placeholder="e.g. Jim" maxlength="40"></label>
     <button class="settings-link" type="button" id="drawersBtn"><span>Drawers &amp; categories<small>Which drawer holds what, mixed drawers, drawer labels</small></span><span aria-hidden="true">›</span></button>
     <div class="section-label">Assistant</div>
@@ -627,9 +639,9 @@
   </div>
 </dialog>
 
-<script src="niimbluelib.js?v=14"></script>
-<script src="qr.js?v=14"></script>
-<script src="parser.js?v=14"></script>
-<script src="app.js?v=14"></script>
+<script src="niimbluelib.js?v=15"></script>
+<script src="qr.js?v=15"></script>
+<script src="parser.js?v=15"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>

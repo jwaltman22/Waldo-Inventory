@@ -21,7 +21,7 @@
   };
 
   const DEFAULT_SETTINGS = {
-    syncUrl: '', syncKey: '', speakAnswers: true, autoPrint: true, askDrawer: false, userName: '', qrOnLabels: true, voiceName: '', voiceRate: 1, sortBy: 'drawer', starFirst: true,
+    syncUrl: '', syncKey: '', speakAnswers: true, autoPrint: true, askDrawer: false, userName: '', qrOnLabels: true, voiceName: '', voiceRate: 1, sortBy: 'drawer', starFirst: true, aiEnabled: true,
     labelSize: '50x30', customW: 50, customH: 30, density: 3,
   };
   let settings = Object.assign({}, DEFAULT_SETTINGS, LS.get('jim.settings', {}));
@@ -260,6 +260,7 @@
   function answer(text, spoken, actions) {
     if (currentTab !== 'items') switchTab('items');
     const el = $('answer');
+    el.classList.toggle('ai', !!lastAnswerAi); lastAnswerAi = false;
     el.textContent = text; el.classList.add('show');
     actions = [].concat(actions || []).filter(Boolean);
     if (actions.length) {
@@ -322,6 +323,84 @@
     if (on) $('transcript').textContent = '';
   }
 
+  // ---------------------------------------------------------------- AI understanding (Gemini via the Apps Script)
+  let aiState = LS.get('jim.ai', { ready: null, lastError: '', lastOk: 0 });
+  let lastAnswerAi = false;
+  const aiUsable = () => settings.aiEnabled !== false && !!settings.syncUrl && navigator.onLine && aiState.ready !== false;
+  function setAiState(patch) { Object.assign(aiState, patch); LS.set('jim.ai', aiState); updateAiUi(); }
+
+  /** Short summary the AI needs: the drawers and what's in them. */
+  function aiContext() {
+    return {
+      drawers: drawerCfg().map((d) => ({ name: d.name, category: d.category, mode: d.mode })),
+      items: live().slice(0, 250).map((i) => isMixed(i)
+        ? i.drawer + ' (mixed) contains: ' + getContents(i).slice(0, 30).join(', ') + ' | ' + i.drawer + ' | -'
+        : i.name + ' | ' + i.drawer + ' | ' + i.quantity),
+    };
+  }
+  const LOC = /^(drawer|bin|shelf|cabinet|slot|box|tray|rack)\s*#?\s*(.+)$/i;
+  function cleanDrawer(d) {
+    if (!d) return null;
+    const s = String(d).trim();
+    const known = drawerCfg().find((x) => x.name.toLowerCase() === s.toLowerCase());
+    if (known) return known.name;
+    const m = LOC.exec(s);
+    return m ? m[1][0].toUpperCase() + m[1].slice(1).toLowerCase() + ' ' + m[2].replace(/\s+/g, '').toUpperCase() : s;
+  }
+  /** Map Gemini's JSON onto the same command shapes the built-in parser produces. Null = let the rules handle it. */
+  function aiToIntent(r, raw) {
+    if (!r || typeof r !== 'object') return null;
+    const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    const qty = Number.isInteger(r.quantity) && r.quantity > 0 ? r.quantity : null;
+    const drawer = cleanDrawer(str(r.drawer));
+    switch (r.type) {
+      case 'add': return str(r.name) ? { type: 'add', name: str(r.name), drawer, quantity: qty || 1, raw } : null;
+      case 'find': case 'count': return str(r.query || r.name) ? { type: r.type, query: str(r.query || r.name), raw } : null;
+      case 'remove': return str(r.query || r.name) ? { type: 'remove', query: str(r.query || r.name), quantity: qty, raw } : null;
+      case 'print':
+        if (r.drawerLabel && drawer) return { type: 'print', query: '', drawer, raw };
+        return str(r.query || r.name) ? { type: 'print', query: str(r.query || r.name), drawer: null, raw } : null;
+      case 'list': return { type: 'list', drawer, raw };
+      case 'answer': return str(r.reply) ? { type: 'answer', reply: str(r.reply), raw } : null;
+      default: return null;
+    }
+  }
+  async function aiInterpret(text) {
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = setTimeout(() => ctl && ctl.abort(), 9000);
+    try {
+      const res = await fetch(settings.syncUrl, {
+        method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow', signal: ctl ? ctl.signal : undefined,
+        body: JSON.stringify({ key: settings.syncKey, action: 'ai', text, context: aiContext() }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        if (data.error === 'no_ai_key' || data.error === 'bad_action') setAiState({ ready: false, lastError: data.error });
+        else setAiState({ lastError: data.error + (data.detail ? ': ' + data.detail : '') });
+        return null;
+      }
+      const intent = aiToIntent(data.result, text);
+      setAiState({ ready: true, lastError: intent ? '' : 'unclear', lastOk: Date.now() });
+      return intent;
+    } catch (e) {
+      setAiState({ lastError: e && e.name === 'AbortError' ? 'timed out' : String(e && e.message || e) });
+      return null;
+    } finally { clearTimeout(timer); }
+  }
+  function updateAiUi() {
+    const st = $('aiStatus');
+    if (!st) return;
+    let t;
+    if (settings.aiEnabled === false) t = 'Off — using the built-in rules.';
+    else if (!settings.syncUrl) t = 'Needs sync set up first (the AI runs through your Google Apps Script).';
+    else if (aiState.ready === false) t = aiState.lastError === 'bad_action'
+      ? 'Your Apps Script is an older version — paste in the new Code.gs and deploy a new version.'
+      : 'Not set up yet — add GEMINI_API_KEY in your Apps Script’s Script Properties.';
+    else if (aiState.ready === true) t = '✓ Gemini connected' + (aiState.lastError && aiState.lastError !== 'unclear' ? ' (last problem: ' + aiState.lastError + ')' : '') + '.';
+    else t = 'Will connect on the next sync or command.';
+    st.textContent = t;
+  }
+
   // ---------------------------------------------------------------- commands (MainViewModel.handleIntent port)
   let pendingAdd = null;
 
@@ -332,9 +411,20 @@
       settings.userName = nm[1].trim().replace(/\b([a-z])/g, (c) => c.toUpperCase()); saveSettings(); renderGreeting();
       return answer('Nice to meet you, ' + settings.userName + '.');
     }
-    const intent = parse(text);
+    let intent = null;
+    let viaAi = false;
+    if (aiUsable()) {
+      $('transcript').textContent = '“' + text + '” · thinking…';
+      intent = await aiInterpret(text);
+      viaAi = !!intent;
+      $('transcript').textContent = '“' + text + '”';
+    }
+    if (!intent) intent = parse(text);
+    lastAnswerAi = viaAi;
     for (const k of ['name', 'query']) if (intent[k]) intent[k] = applyAlias(intent[k]);
     switch (intent.type) {
+      case 'answer':
+        return answer(intent.reply || 'I’m not sure.');
       case 'add': {
         if (!intent.name) return answer('What item should I add? Try: “add WAC-47 lens drawer 3”.');
         if (intent.drawer) return stockIn(intent.name, intent.drawer, intent.quantity);
@@ -998,6 +1088,7 @@
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error === 'bad_key' ? 'wrong passphrase' : (data.error || 'server error'));
+      if (typeof data.ai === 'boolean' && data.ai !== aiState.ready) setAiState({ ready: data.ai, lastError: data.ai ? '' : 'no_ai_key' });
       // our pushes landed — clear dirty flags unless edited again meanwhile
       for (const it of items) if (it.dirty && sentVersion.get(it.id) === it.updatedAt) it.dirty = false;
       // merge remote rows: newest edit wins
@@ -1511,6 +1602,8 @@
     f.speakAnswers.checked = !!settings.speakAnswers; f.autoPrint.checked = !!settings.autoPrint; f.askDrawer.checked = !!settings.askDrawer;
     f.qrOnLabels.checked = settings.qrOnLabels !== false;
     fillVoiceList();
+    f.aiEnabled.checked = settings.aiEnabled !== false;
+    updateAiUi();
     f.voiceRate.value = settings.voiceRate || 1;
     updateSyncUi();
     $('settingsDlg').showModal();
@@ -1529,6 +1622,8 @@
     settings.speakAnswers = f.speakAnswers.checked; settings.autoPrint = f.autoPrint.checked; settings.askDrawer = f.askDrawer.checked;
     settings.qrOnLabels = f.qrOnLabels.checked;
     settings.voiceName = f.voiceName.value; settings.voiceRate = +f.voiceRate.value || 1;
+    settings.aiEnabled = f.aiEnabled.checked;
+    if (newUrl !== (settings._lastAiUrl || '')) { settings._lastAiUrl = newUrl; setAiState({ ready: null, lastError: '' }); }
     saveSettings(); LS.set('jim.items', items);
     renderGreeting();
     scheduleSync(100);

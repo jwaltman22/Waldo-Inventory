@@ -21,7 +21,7 @@
   };
 
   const DEFAULT_SETTINGS = {
-    syncUrl: '', syncKey: '', speakAnswers: true, autoPrint: true, askDrawer: false, userName: '', qrOnLabels: true, voiceName: '', voiceRate: 1, sortBy: 'drawer', starFirst: true, aiEnabled: true,
+    syncUrl: '', syncKey: '', speakAnswers: true, autoPrint: true, askDrawer: false, userName: '', qrOnLabels: true, voiceName: '', voiceRate: 1, sortBy: 'drawer', starFirst: true, aiEnabled: true, theme: 'auto',
     labelSize: '50x30', customW: 50, customH: 30, density: 3,
   };
   let settings = Object.assign({}, DEFAULT_SETTINGS, LS.get('jim.settings', {}));
@@ -1873,6 +1873,19 @@
     speak((nm ? 'Hi ' + nm + '. ' : 'Hi. ') + 'Put AA batteries in Drawer 1. Printing label.', true);
     Object.assign(settings, keep);
   };
+
+  // ---- appearance: Automatic follows the phone; Light/Dark override it (applied instantly, saved per phone)
+  function applyTheme(t) {
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+    else document.documentElement.removeAttribute('data-theme');
+    const dark = t === 'dark' || (t !== 'light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+    document.querySelectorAll('meta[name=theme-color]').forEach((m) => { m.setAttribute('content', dark ? '#04172e' : '#002a55'); m.removeAttribute('media'); });
+    document.querySelectorAll('#themeSeg button').forEach((b) => b.classList.toggle('on', b.dataset.themeOpt === (t || 'auto')));
+  }
+  document.querySelectorAll('#themeSeg button').forEach((b) => {
+    b.onclick = () => { settings.theme = b.dataset.themeOpt; saveSettings(); applyTheme(settings.theme); };
+  });
+  applyTheme(settings.theme);
 
   $('activityMore').onclick = () => { activityAll = !activityAll; renderActivity(); };
 

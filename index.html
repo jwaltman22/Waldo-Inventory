@@ -12,6 +12,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="icon-192.png">
 <title>Waldo Supply</title>
+<script>try { var t = (JSON.parse(localStorage.getItem('jim.settings') || '{}').theme) || 'auto'; if (t !== 'auto') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
 <style>
   :root {
     --bg: #fafafa; --surface: #ffffff; --surface-2: #f4f4f5; --ink: #09090b; --ink-2: #3f3f46; --muted: #71717a;
@@ -24,7 +25,7 @@
     --radius: 16px;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --bg: #0b0b0d; --surface: #141417; --surface-2: #1c1c21; --ink: #fafafa; --ink-2: #d4d4d8; --muted: #8b8b95;
       --line: #26262c; --line-2: #1f1f24;
       --accent: #818cf8; --accent-2: #a78bfa; --accent-soft: rgba(129,140,248,.12); --accent-ink: #a5b4fc;
@@ -32,6 +33,14 @@
       --ok: #22c55e; --warn: #f59e0b; --bad: #f87171;
       --shadow-sm: none; --shadow: 0 0 0 1px rgba(255,255,255,.02);
     }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b0b0d; --surface: #141417; --surface-2: #1c1c21; --ink: #fafafa; --ink-2: #d4d4d8; --muted: #8b8b95;
+    --line: #26262c; --line-2: #1f1f24;
+    --accent: #818cf8; --accent-2: #a78bfa; --accent-soft: rgba(129,140,248,.12); --accent-ink: #a5b4fc;
+    --grad: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    --ok: #22c55e; --warn: #f59e0b; --bad: #f87171;
+    --shadow-sm: none; --shadow: 0 0 0 1px rgba(255,255,255,.02);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   [hidden] { display: none !important; }
@@ -234,6 +243,8 @@
   .seg button.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
   .voice-row { display: flex; align-items: flex-end; gap: 12px; }
   input[type=range] { padding: 0; border: 0; box-shadow: none !important; height: 28px; accent-color: var(--accent); background: transparent; }
+  .seg-wide { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .seg-wide button { padding: 9px 6px; font-size: 14px; }
   .btn.sm { height: 34px; padding: 0 10px; font-size: 13px; }
   .settings-link { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 14px; border: 0; border-radius: 14px;
     background: var(--surface-2); font-size: 15px; font-weight: 600; color: var(--ink); text-align: left; }
@@ -256,7 +267,7 @@
     --radius: 18px;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --bg: #0a0f17; --surface: #121a26; --surface-2: #18212f; --ink: #eef3fa; --ink-2: #c7d0dc; --muted: #8592a3;
       --line: #223042; --line-2: #1b2636;
       --accent: #4fb3f0; --accent-soft: rgba(79,179,240,.12); --accent-ink: #8ccdf6;
@@ -264,6 +275,14 @@
       --bar: linear-gradient(165deg, #04172e 0%, #072a4f 60%, #0b4a80 100%);
       --shadow-sm: none; --shadow: 0 0 0 1px rgba(255,255,255,.02);
     }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a0f17; --surface: #121a26; --surface-2: #18212f; --ink: #eef3fa; --ink-2: #c7d0dc; --muted: #8592a3;
+    --line: #223042; --line-2: #1b2636;
+    --accent: #4fb3f0; --accent-soft: rgba(79,179,240,.12); --accent-ink: #8ccdf6;
+    --grad: linear-gradient(135deg, #2a9ee6 0%, #0b4a8c 100%);
+    --bar: linear-gradient(165deg, #04172e 0%, #072a4f 60%, #0b4a80 100%);
+    --shadow-sm: none; --shadow: 0 0 0 1px rgba(255,255,255,.02);
   }
   body { background: var(--bg); }
   .appbar { position: sticky; top: 0; z-index: 20; background: var(--bar); color: #fff;
@@ -362,7 +381,12 @@
 
   .fab { width: 60px; height: 60px; border-radius: 50%; background: var(--red); color: #fff; box-shadow: 0 12px 28px -8px rgba(193,32,38,.6); }
   .btn.primary { background: var(--navy); color: #fff; }
-  @media (prefers-color-scheme: dark) { .btn.primary { background: var(--accent); color: #04172e; } .send { background: var(--accent); color: #04172e; } }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .btn.primary { background: var(--accent); color: #04172e; }
+    :root:not([data-theme="light"]) .send { background: var(--accent); color: #04172e; }
+  }
+  :root[data-theme="dark"] .btn.primary { background: var(--accent); color: #04172e; }
+  :root[data-theme="dark"] .send { background: var(--accent); color: #04172e; }
   .switch input:checked { background: var(--sky); }
   .toast { bottom: calc(96px + env(safe-area-inset-bottom)); }
 </style>
@@ -573,9 +597,15 @@
 <!-- Settings / sync -->
 <dialog id="settingsDlg">
   <form class="dlg" method="dialog" id="settingsForm">
-    <h2>Settings <span class="kv" style="font-weight:500">· v15</span></h2>
+    <h2>Settings <span class="kv" style="font-weight:500">· v16</span></h2>
     <label>Your name<input name="userName" autocomplete="given-name" placeholder="e.g. Jim" maxlength="40"></label>
     <button class="settings-link" type="button" id="drawersBtn"><span>Drawers &amp; categories<small>Which drawer holds what, mixed drawers, drawer labels</small></span><span aria-hidden="true">›</span></button>
+    <div class="section-label">Appearance</div>
+    <div class="seg seg-wide" id="themeSeg">
+      <button type="button" data-theme-opt="auto">Automatic</button>
+      <button type="button" data-theme-opt="light">Light</button>
+      <button type="button" data-theme-opt="dark">Dark</button>
+    </div>
     <div class="section-label">Assistant</div>
     <div class="group">
       <label class="switch">Speak answers out loud<input name="speakAnswers" type="checkbox"></label>
@@ -639,9 +669,9 @@
   </div>
 </dialog>
 
-<script src="niimbluelib.js?v=15"></script>
-<script src="qr.js?v=15"></script>
-<script src="parser.js?v=15"></script>
-<script src="app.js?v=15"></script>
+<script src="niimbluelib.js?v=16"></script>
+<script src="qr.js?v=16"></script>
+<script src="parser.js?v=16"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>

@@ -117,6 +117,9 @@
     if (type === 'count') rest = rest.replace(COUNT_TAIL, '').trim();
     rest = rest.replace(/[\s,]+$/, '');
 
+    // "print all the labels for drawer 3", "print everything in drawer 3" -> every label in that drawer
+    if (type === 'print' && drawer && /\b(all|everything|every|whole|each|entire)\b/i.test(working)) return { type: 'printAll', drawer, raw: original };
+
     switch (type) {
       case 'find': return { type, query: rest, raw: original };
       case 'count': return { type, query: rest, raw: original };

@@ -7,6 +7,9 @@
   'use strict';
 
   const N = window.niimbluelib;
+  // Running inside the native iPhone/Android app (Capacitor)? Then use the phone's own Bluetooth, speech and voice.
+  const NATIVE = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
+  const NB = NATIVE ? (window.NativeBridge || {}) : {};
   const { parse, normalize } = window.JimParser;
   const $ = (id) => document.getElementById(id);
 
@@ -21,17 +24,111 @@
   };
 
   const DEFAULT_SETTINGS = {
-    syncUrl: '', syncKey: '', speakAnswers: true, autoPrint: true, askDrawer: false, userName: '', qrOnLabels: true, voiceName: '', voiceRate: 1, sortBy: 'drawer', starFirst: true, aiEnabled: true, theme: 'auto',
+    syncUrl: '', syncKey: '', speakAnswers: true, autoPrint: true, askDrawer: false, userName: '', qrOnLabels: true, voiceName: '', voiceRate: 1, sortBy: 'drawer', starFirst: true, aiEnabled: true, theme: 'auto', drawerView: 'map', handsFree: false,
     labelSize: '50x30', customW: 50, customH: 30, density: 3,
   };
+  // Real storage: IndexedDB is the main copy (no 5 MB cap, transactional), localStorage is a fast mirror for
+  // instant start-up. Whichever copy was saved last wins at start-up. Rolling automatic backups live in IndexedDB too.
+  const Store = (() => {
+    let dbp = null;
+    function db() {
+      if (dbp) return dbp;
+      dbp = new Promise((resolve, reject) => {
+        if (!window.indexedDB) return reject(new Error('no IndexedDB'));
+        const req = indexedDB.open('waldo-supply', 1);
+        req.onupgradeneeded = () => {
+          const d = req.result;
+          if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv');
+          if (!d.objectStoreNames.contains('backups')) d.createObjectStore('backups', { keyPath: 'at' });
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+        req.onblocked = () => reject(new Error('IndexedDB blocked'));
+      }).catch((e) => { dbp = Promise.resolve(null); return null; });
+      return dbp;
+    }
+    function tx(store, mode, fn) {
+      return db().then((d) => d && new Promise((resolve, reject) => {
+        const t = d.transaction(store, mode); const os = t.objectStore(store);
+        let out; const r = fn(os); if (r) r.onsuccess = () => { out = r.result; };
+        t.oncomplete = () => resolve(out); t.onerror = () => reject(t.error); t.onabort = () => reject(t.error);
+      })).catch(() => null);
+    }
+    let ok = null;   // true once an IndexedDB write succeeded
+    return {
+      get: (k) => tx('kv', 'readonly', (os) => os.get(k)),
+      put: (k, v) => tx('kv', 'readwrite', (os) => os.put(v, k)).then((r) => { ok = r !== null || ok; return r; }),
+      backups: () => tx('backups', 'readonly', (os) => os.getAll()).then((l) => (l || []).sort((a, b) => b.at - a.at)),
+      addBackup: (b) => tx('backups', 'readwrite', (os) => os.put(b)),
+      delBackup: (at) => tx('backups', 'readwrite', (os) => os.delete(at)),
+      available: () => db().then((d) => !!d),
+      get ok() { return ok; },
+    };
+  })();
+  /** Save one key to both stores. The stamp says which copy is newest. */
+  function persist(key, value) {
+    const t = Date.now();
+    const lsOk = LS.set(key, value) && LS.set(key + '@', t);
+    const p = Store.put(key, { t, value });
+    if (!lsOk) p.then((r) => { if (r === null) toast('Could not save on this device (storage full or blocked)'); });
+    return p;
+  }
+  /** At start-up: if IndexedDB holds a newer copy than localStorage (e.g. localStorage was full or cleared), use it. */
+  async function loadNewer(key, current) {
+    const rec = await Store.get(key);
+    const lsT = LS.get(key + '@', 0);
+    if (rec && rec.value && (rec.t > lsT || (!lsT && !(current && current.length)))) return rec.value;
+    if (!rec && current && current.length) Store.put(key, { t: lsT || Date.now(), value: current }); // first run: copy localStorage → IndexedDB
+    return null;
+  }
+
   let settings = Object.assign({}, DEFAULT_SETTINGS, LS.get('jim.settings', {}));
   let items = LS.get('jim.items', []);
   let syncState = LS.get('jim.sync', { cursor: 0, lastOk: 0, lastError: '' });
+  let storeReady = false;
 
   function saveItems() {
-    if (!LS.set('jim.items', items)) toast('Could not save on this device (storage blocked?)');
+    persist('jim.items', items);
+    autoBackup();
     render();
     scheduleSync();
+  }
+
+  // ---- automatic backups: a snapshot at most every 3 hours (and at start-up), the last 14 kept
+  const BACKUP_GAP = 3 * 3600e3, BACKUP_KEEP = 14;
+  let lastBackupAt = 0, backupBusy = false;
+  async function autoBackup(force, reason) {
+    if (!storeReady || backupBusy) return;
+    if (!force && Date.now() - lastBackupAt < BACKUP_GAP) return;
+    const liveItems = items.filter((i) => !i.deleted);
+    if (!liveItems.length && !force) return;
+    backupBusy = true;
+    try {
+      const at = Date.now();
+      await Store.addBackup({ at, reason: reason || 'auto', count: liveItems.filter((i) => !isConfig(i)).length,
+        items: liveItems.map((i) => { const o = Object.assign({}, i); delete o.dirty; return o; }) });
+      lastBackupAt = at;
+      const all = await Store.backups();
+      for (const b of all.slice(BACKUP_KEEP)) await Store.delBackup(b.at);
+    } finally { backupBusy = false; }
+  }
+  async function restoreBackup(at) {
+    const b = (await Store.backups()).find((x) => x.at === at);
+    if (!b) return toast('That backup is gone');
+    await autoBackup(true, 'before restore');
+    const now = Date.now();
+    const keep = new Set(b.items.map((i) => i.id));
+    for (const it of items) if (!keep.has(it.id) && !it.deleted) { it.deleted = true; it.updatedAt = now; it.dirty = true; }
+    const byId = new Map(items.map((i) => [i.id, i]));
+    for (const src of b.items) {
+      const copy = Object.assign({}, src, { deleted: false, updatedAt: now, dirty: true });
+      const cur = byId.get(src.id);
+      if (cur) Object.assign(cur, copy, { syncedAt: cur.syncedAt, qtyBase: null }); else items.push(copy);
+    }
+    saveItems();
+    log('edit', 'Restored the backup from ' + new Date(at).toLocaleString());
+    toast('Restored ' + b.count + ' items from ' + new Date(at).toLocaleString());
+    renderBackups();
   }
   function saveSettings() { LS.set('jim.settings', settings); }
   function saveSyncState() { LS.set('jim.sync', syncState); }
@@ -104,10 +201,13 @@
       parts.find((c) => qWords.length && qWords.every((w) => keyWords(c).includes(w))) || null;
   }
 
-  function findItems(query) {
+  function findItems(query) { return findScored(query).map((s) => s.it); }
+  /** Matches with a score: 100 exact · 80 all words · 60 contains · 20–50 some words. */
+  function findScored(query) {
     const q = normalize(query);
     if (!q) return [];
     const qWords = keyWords(query);
+    const qNums = q.match(/\d+/g) || [];
     const scored = [];
     for (const it of live()) {
       const n = normalize(it.name);
@@ -118,13 +218,88 @@
       else if (qWords.length && qWords.every((w) => words.includes(w))) score = 80;
       else if (n.includes(q) || q.includes(n)) score = 60;
       else {
-        const hits = qWords.filter((w) => w.length >= 3 && words.some((x) => x.includes(w) || w.includes(x))).length;
+        // loose: some words overlap — but a part number in the question must be in the item (AN4 never finds AN3)
+        const hay = [n, ...parts.map(normalize)].join(' ');
+        const numsOk = qNums.every((d) => new RegExp('(^|[^0-9])' + d + '($|[^0-9])').test(hay));
+        const hits = numsOk ? qWords.filter((w) => w.length >= 3 && !/^\d+$/.test(w) && words.some((x) => x.length >= 3 && (x.includes(w) || w.includes(x)))).length : 0;
         if (hits) score = 20 + hits * 10;
       }
       if (score) scored.push({ it, score });
     }
     scored.sort((a, b) => b.score - a.score || b.it.updatedAt - a.it.updatedAt);
-    return scored.map((s) => s.it);
+    return scored;
+  }
+
+  // ---------------------------------------------------------------- fuzzy matching ("did you mean…?")
+  // Typos, mishearings and sound-alikes: "jetson nana" ≈ Jetson Nano, "capton tape" ≈ Kapton Tape, "torque ranch" ≈ Torque Wrench.
+  // Numbers must match exactly (AN3 ≠ AN4), so part numbers are never silently swapped.
+  const FUZZY_AUTO = 0.9, FUZZY_ASK = 0.66;
+  const NUMW = { zero: '0', one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10',
+    eleven: '11', twelve: '12', thirteen: '13', fourteen: '14', fifteen: '15', sixteen: '16', seventeen: '17', eighteen: '18', nineteen: '19', twenty: '20' };
+  const FZ_STOP = new Set(['the', 'a', 'an', 'of', 'for', 'some', 'new', 'my', 'our', 'and', 'with']);
+  const fzTokens = (s) => keyWords(s).map((w) => NUMW[w] || w).filter((w) => !FZ_STOP.has(w));
+  function lev(a, b) {
+    if (a === b) return 0;
+    const m = a.length, n = b.length;
+    if (!m || !n) return m || n;
+    let pp = null, prev = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) {
+      const cur = [i];
+      for (let j = 1; j <= n; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        if (pp && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) cur[j] = Math.min(cur[j], pp[j - 2] + 1); // swapped letters
+      }
+      pp = prev; prev = cur;
+    }
+    return prev[n];
+  }
+  /** Rough "sounds like" key: same letters for same sounds, vowels after the first letter dropped. */
+  function soundKey(w) {
+    let x = w.toLowerCase().replace(/[^a-z]/g, '');
+    if (!x) return '';
+    x = x.replace(/^kn|^gn|^pn|^wr/, (m) => m[1]).replace(/ph/g, 'f').replace(/ck/g, 'k').replace(/q/g, 'k').replace(/x/g, 'ks')
+      .replace(/c(?=[eiy])/g, 's').replace(/c/g, 'k').replace(/z/g, 's').replace(/dg(?=[eiy])/g, 'j').replace(/gh(?![aeiou])/g, '')
+      .replace(/sh/g, 'S').replace(/th/g, '0').replace(/wh/g, 'w').replace(/v/g, 'f').replace(/([a-z])\1+/g, '$1');
+    return x[0] + x.slice(1).replace(/[aeiouyhw]/g, '');
+  }
+  function tokSim(a, b) {
+    if (a === b) return 1;
+    const na = a.match(/\d+/g), nb = b.match(/\d+/g);
+    if (na || nb) {
+      if (String(na) !== String(nb)) return 0.15;                        // different numbers: never the same part
+      return a.replace(/\d+/g, '#') === b.replace(/\d+/g, '#') ? 1 : 0.6;
+    }
+    let s = 1 - lev(a, b) / Math.max(a.length, b.length);
+    if (a.length >= 3 && b.length >= 3 && soundKey(a) === soundKey(b)) s = Math.max(s, 0.86);
+    if (Math.min(a.length, b.length) >= 4 && (a.startsWith(b) || b.startsWith(a))) s = Math.max(s, 0.8);
+    return s;
+  }
+  /** 0..1 — how likely the spoken words name this item. */
+  function nameSim(query, name) { return simDetail(query, name).sim; }
+  /** sim = overall likeness; cover = how well every spoken word is found in the name ("kapton tape" fully covers "rolls of Kapton tape"). */
+  function simDetail(query, name) {
+    const Q = fzTokens(query), T = fzTokens(name);
+    if (!Q.length || !T.length) return { sim: 0, cover: 0 };
+    const best = (w, list) => Math.max(...list.map((t) => tokSim(w, t)));
+    const wavg = (ws) => ws.reduce((s, w) => s + best(w.w, w.o) * w.w.length, 0) / ws.reduce((s, w) => s + w.w.length, 0);
+    const qs = wavg(Q.map((w) => ({ w, o: T }))), ts = wavg(T.map((w) => ({ w, o: Q })));
+    let sim = 0.65 * qs + 0.35 * ts;
+    const jq = Q.join(''), jt = T.join('');                                // "jetsonnano" vs "jetson nano"
+    if (!/\d/.test(jq + jt) || String(jq.match(/\d+/g)) === String(jt.match(/\d+/g))) sim = Math.max(sim, 0.95 * (1 - lev(jq, jt) / Math.max(jq.length, jt.length)));
+    return { sim, cover: qs };
+  }
+  /** Close matches across item names and mixed-drawer parts, best first. */
+  function fuzzyCandidates(query, min = FUZZY_ASK) {
+    const out = [];
+    for (const it of live()) {
+      const names = isMixed(it) ? getContents(it) : [it.name];
+      for (const nm of names) {
+        const d = simDetail(query, nm);
+        if (d.sim >= min) out.push({ it, name: nm, score: d.sim, cover: d.cover });
+      }
+    }
+    out.sort((a, b) => b.score - a.score);
+    return out.filter((c, i) => out.findIndex((d) => d.name === c.name && d.it === c.it) === i).slice(0, 3);
   }
 
   function suggestNextDrawer(prefix = 'Drawer ') {
@@ -151,7 +326,7 @@
       try {
         const v = JSON.parse(c.notes);
         if (Array.isArray(v)) return { drawers: v, aliases: {} };
-        if (v && typeof v === 'object') return { drawers: Array.isArray(v.drawers) ? v.drawers : [], aliases: v.aliases || {} };
+        if (v && typeof v === 'object') return Object.assign({}, v, { drawers: Array.isArray(v.drawers) ? v.drawers : [], aliases: v.aliases || {} });
       } catch (e) { /* fall back */ }
     }
     return { drawers: [], aliases: {} };
@@ -161,7 +336,7 @@
     return d.length ? d : DEFAULT_DRAWERS;
   }
   function saveDrawerCfg(list, aliases) {
-    writeCfg({ drawers: list, aliases: aliases || cfgData().aliases });
+    writeCfg(Object.assign(cfgData(), { drawers: list, aliases: aliases || cfgData().aliases }));
   }
   /** Names Waldo has been corrected on: what it heard → what the thing is really called. */
   const getAliases = () => cfgData().aliases;
@@ -173,7 +348,7 @@
     const k = normalize(heard);
     if (!k || k === normalize(real)) return;
     const aliases = Object.assign({}, getAliases(), { [k]: real });
-    writeCfg({ drawers: cfgData().drawers.length ? cfgData().drawers : DEFAULT_DRAWERS, aliases });
+    writeCfg(Object.assign(cfgData(), { drawers: cfgData().drawers.length ? cfgData().drawers : DEFAULT_DRAWERS, aliases }));
   }
   function writeCfg(data) {
     let c = items.find((i) => i.id === CONFIG_ID);
@@ -234,9 +409,14 @@
     if (/^en[-_]us/i.test(v.lang)) r += 5;
     return r;
   }
+  let nativeVoices = [];
+  if (NB.TextToSpeech) NB.TextToSpeech.getSupportedVoices().then((r) => { nativeVoices = (r && r.voices) || []; }).catch(() => {});
   function englishVoices() {
-    if (!('speechSynthesis' in window)) return [];
-    return speechSynthesis.getVoices().filter((v) => /^en([-_]|$)/i.test(v.lang) && !NOVELTY.test(v.name))
+    let all;
+    if (NB.TextToSpeech) all = nativeVoices;
+    else if ('speechSynthesis' in window) all = speechSynthesis.getVoices();
+    else return [];
+    return all.filter((v) => /^en([-_]|$)/i.test(v.lang) && !NOVELTY.test(v.name))
       .sort((a, b) => voiceRank(b) - voiceRank(a) || a.name.localeCompare(b.name));
   }
   function chosenVoice() {
@@ -245,22 +425,41 @@
     return list[0] || null; // best-ranked English voice
   }
 
+  /** Speaks, and returns a promise that settles when Waldo has finished talking (hands-free waits for it). */
   function speak(text, force) {
-    if ((!settings.speakAnswers && !force) || !('speechSynthesis' in window)) return;
-    try {
-      speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
+    if (!settings.speakAnswers && !force) return Promise.resolve();
+    const guess = 1500 + String(text).length * 85 / Math.max(0.7, +settings.voiceRate || 1);   // in case "end" never fires
+    if (NB.TextToSpeech) {
       const v = chosenVoice();
-      if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-US';
-      u.rate = Math.min(1.4, Math.max(0.7, +settings.voiceRate || 1));
-      speechSynthesis.speak(u);
-    } catch (e) { /* ignore */ }
+      const idx = v ? nativeVoices.indexOf(v) : -1;
+      const opts = { text, lang: (v && v.lang) || 'en-US', rate: Math.min(1.4, Math.max(0.7, +settings.voiceRate || 1)), category: 'playback' };
+      if (idx >= 0) opts.voice = idx;
+      return Promise.race([
+        NB.TextToSpeech.stop().catch(() => {}).then(() => NB.TextToSpeech.speak(opts)).catch(() => {}),
+        new Promise((r) => setTimeout(r, guess + 4000)),
+      ]);
+    }
+    if (!('speechSynthesis' in window)) return Promise.resolve();
+    return new Promise((resolve) => {
+      try {
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        const v = chosenVoice();
+        if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-US';
+        u.rate = Math.min(1.4, Math.max(0.7, +settings.voiceRate || 1));
+        const t = setTimeout(resolve, guess + 4000);
+        u.onend = u.onerror = () => { clearTimeout(t); resolve(); };
+        speechSynthesis.speak(u);
+      } catch (e) { resolve(); }
+    });
   }
+  let lastSpeech = Promise.resolve();
 
   function answer(text, spoken, actions) {
     if (currentTab !== 'items') switchTab('items');
     const el = $('answer');
     el.classList.toggle('ai', !!lastAnswerAi); lastAnswerAi = false;
+    if (fuzzyNote) { text = fuzzyNote + text; if (typeof spoken === 'string') spoken = fuzzyNote + spoken; fuzzyNote = ''; }
     el.textContent = text; el.classList.add('show');
     actions = [].concat(actions || []).filter(Boolean);
     if (actions.length) {
@@ -273,10 +472,52 @@
       }
       el.appendChild(row);
     }
-    if (spoken !== false) speak(spoken || text);
+    lastSpeech = spoken !== false ? speak(spoken || text) : Promise.resolve();
+  }
+
+  // Native app: the phone's own speech recognition (plugin). Stops after a short pause or a second tap.
+  let nativeFinish = null;
+  async function nativeListen() {
+    const R = NB.SpeechRecognition;
+    if (listening && nativeFinish) return nativeFinish();
+    try {
+      const p = await R.checkPermissions();
+      if (!p || p.speechRecognition !== 'granted') {
+        const r = await R.requestPermissions();
+        if (!r || r.speechRecognition !== 'granted') { toast('Turn on Microphone and Speech Recognition for Waldo Supply in iPhone/Android Settings'); return; }
+      }
+    } catch (e) { /* older plugin versions: just try */ }
+    let latest = '', silence = null, done = false;
+    nativeFinish = async (discard) => {
+      if (done) return; done = true;
+      if (discard) latest = '';
+      clearTimeout(silence); nativeFinish = null;
+      setListening(false);
+      try { await R.stop(); } catch (e) { /* */ }
+      try { await R.removeAllListeners(); } catch (e) { /* */ }
+      heard(latest.trim());
+    };
+    try { await R.removeAllListeners(); } catch (e) { /* */ }
+    R.addListener('partialResults', (d) => {
+      const m = d && d.matches && d.matches[0];
+      if (m) { latest = m; $('transcript').textContent = m; }
+      clearTimeout(silence); silence = setTimeout(() => nativeFinish && nativeFinish(), 1600);
+    });
+    R.addListener('listeningState', (d) => { if (d && d.status === 'stopped' && nativeFinish) nativeFinish(); });
+    try { speechSynthesis && speechSynthesis.cancel(); } catch (e) { /* */ }
+    if (NB.TextToSpeech) NB.TextToSpeech.stop().catch(() => {});
+    setListening(true);
+    silence = setTimeout(() => nativeFinish && nativeFinish(), 8000);
+    try {
+      await R.start({ language: 'en-US', maxResults: 1, partialResults: true, popup: false });
+    } catch (e) {
+      done = true; nativeFinish = null; clearTimeout(silence); setListening(false);
+      toast('Couldn’t start listening: ' + (e && e.message || e));
+    }
   }
 
   function startListening() {
+    if (NB.SpeechRecognition) return nativeListen();
     if (!SR) {
       // iPhone in Bluefy/Safari without speech API: the keyboard mic works everywhere.
       const input = $('cmdInput');
@@ -286,14 +527,16 @@
     }
     if (listening) { recognizer && recognizer.stop(); return; }
     try { speechSynthesis && speechSynthesis.cancel(); } catch (e) { /* */ }
+    if (recognizer) { try { recognizer.onend = null; recognizer.abort(); } catch (e) { /* */ } }
     recognizer = new SR();
     recognizer.lang = 'en-US';
     recognizer.interimResults = true;
     recognizer.maxAlternatives = 1;
     recognizer.continuous = false;
-    let finalText = '';
+    let finalText = '', heardSomething = false;
     recognizer.onstart = () => setListening(true);
     recognizer.onresult = (e) => {
+      heardSomething = true;
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
@@ -304,14 +547,15 @@
     recognizer.onerror = (e) => {
       setListening(false);
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        if (handsFree) setHandsFree(false, true);
         toast('Microphone blocked — use the keyboard 🎤 in the box instead');
         $('cmdInput').focus();
       } else if (e.error !== 'aborted' && e.error !== 'no-speech') toast('Didn’t catch that (' + e.error + ')');
     };
     recognizer.onend = () => {
       setListening(false);
-      const text = finalText.trim() || $('transcript').textContent.trim();
-      if (text) runCommand(text);
+      const text = finalText.trim() || (heardSomething ? $('transcript').textContent.trim() : '');
+      heard(text);
     };
     try { recognizer.start(); } catch (e) { setListening(false); }
   }
@@ -319,9 +563,64 @@
   function setListening(on) {
     listening = on;
     $('micBtn').classList.toggle('listening', on);
-    $('micLabel').textContent = on ? 'Listening… tap to stop' : 'Tap to speak';
+    $('micLabel').textContent = on ? (handsFree ? 'Hands-free · listening…' : 'Listening… tap to stop') : (handsFree ? 'Hands-free · one moment…' : 'Tap to speak');
     if (on) $('transcript').textContent = '';
   }
+
+  // ---- hands-free: keep listening between items until "stop", a minute and a half of quiet, or a tap
+  const canListen = () => !!(SR || NB.SpeechRecognition);
+  const HF_STOP = /^\s*(?:ok(?:ay)?\s+|alright\s+)?(?:stop|stop listening|that'?s (?:all|it)|that is (?:all|it)|(?:i'?m|we'?re|all) done|done|hands[- ]?free off|stop hands[- ]?free|turn off hands[- ]?free|good ?bye|bye|thanks waldo|thank you waldo)\s*[.!]?\s*$/i;
+  const HF_START = /^\s*(?:start |turn on |go )?(?:hands[- ]?free(?: mode)?(?: on)?|keep listening|continuous(?: listening)?(?: mode)?)\s*[.!]?\s*$/i;
+  const HF_IDLE = 90000;
+  let handsFree = false, hfLastHeard = 0, hfTimer = null;
+  function setHandsFree(on, quiet) {
+    if (on && !canListen()) {
+      toast('Hands-free needs the phone’s speech recognition: use Chrome on Android/PC or the Waldo Supply app. In Bluefy, use the keyboard 🎤.');
+      return;
+    }
+    handsFree = !!on;
+    $('handsFreeBtn').setAttribute('aria-pressed', String(handsFree));
+    clearTimeout(hfTimer);
+    if (handsFree) {
+      hfLastHeard = Date.now();
+      if (!quiet) answer('Hands-free is on. Tell me what came in, one item at a time. Say “stop” when you’re done.', 'Hands-free on. Go ahead.');
+      hfNext(quiet ? 0 : null);
+    } else {
+      if (listening) { if (nativeFinish) nativeFinish(true); else if (recognizer) { try { recognizer.onend = null; recognizer.abort(); } catch (e) { /* */ } setListening(false); } }
+      setListening(false);
+      if (!quiet) answer('Hands-free is off.', 'Hands-free off.');
+    }
+  }
+  /** After Waldo answers (and finishes talking), listen again. */
+  function hfNext(delay) {
+    if (!handsFree) return;
+    clearTimeout(hfTimer);
+    const go = async () => {
+      if (!handsFree || listening) return;
+      try { await lastSpeech; } catch (e) { /* */ }
+      if (!handsFree || listening) return;
+      if (document.querySelector('dialog[open]') || document.hidden) { hfTimer = setTimeout(go, 800); return; }   // wait for a sheet to close
+      if (Date.now() - hfLastHeard > HF_IDLE) {
+        handsFree = false; $('handsFreeBtn').setAttribute('aria-pressed', 'false'); setListening(false);
+        answer('Hands-free paused — it was quiet for a while. Tap Hands-free to start again.', 'Hands-free paused.');
+        return;
+      }
+      startListening();
+    };
+    hfTimer = setTimeout(go, delay == null ? 350 : delay);
+  }
+  /** Everything heard by the microphone comes through here. */
+  async function heard(text) {
+    text = String(text || '').trim();
+    if (!text) { hfNext(); return; }
+    if (handsFree) {
+      hfLastHeard = Date.now();
+      if (HF_STOP.test(text)) { $('transcript').textContent = '“' + text + '”'; setHandsFree(false); return; }
+    }
+    await runCommand(text);
+    hfNext();
+  }
+  $('handsFreeBtn').onclick = () => setHandsFree(!handsFree);
 
   // ---------------------------------------------------------------- AI understanding (Gemini via the Apps Script)
   let aiState = LS.get('jim.ai', { ready: null, lastError: '', lastOk: 0 });
@@ -358,6 +657,7 @@
       case 'find': case 'count': return str(r.query || r.name) ? { type: r.type, query: str(r.query || r.name), raw } : null;
       case 'remove': return str(r.query || r.name) ? { type: 'remove', query: str(r.query || r.name), quantity: qty, raw } : null;
       case 'print':
+        if (r.allInDrawer && drawer) return { type: 'printAll', drawer, raw };
         if (r.drawerLabel && drawer) return { type: 'print', query: '', drawer, raw };
         return str(r.query || r.name) ? { type: 'print', query: str(r.query || r.name), drawer: null, raw } : null;
       case 'list': return { type: 'list', drawer, raw };
@@ -416,6 +716,16 @@
       cancelQueued('all');
       return answer(n ? 'Canceled ' + n + ' waiting label' + (n === 1 ? '' : 's') + '.' : 'Nothing was waiting to print.');
     }
+    if (HF_START.test(text)) { setHandsFree(true); return; }
+    if (pendingChoice) {
+      const pc = pendingChoice; pendingChoice = null;
+      if (/^\s*(?:yes|yeah|yep|yup|correct|right|sure|ok(?:ay)?|that one|the first(?: one)?|first(?: one)?)\b/i.test(text)) return pc.acts[0].run();
+      if (/^\s*(?:the )?second(?: one)?\b/i.test(text) && pc.cands.length > 1) return pc.acts[1].run();
+      if (/^\s*(?:the )?third(?: one)?\b/i.test(text) && pc.cands.length > 2) return pc.acts[2].run();
+      if (/^\s*(?:no|nope|neither|none(?: of them)?|wrong)\b\W*$/i.test(text)) return pc.acts[pc.acts.length - 1].run();
+      const best = pc.cands.map((c, i) => ({ i, s: nameSim(text, c.name) })).sort((a, b) => b.s - a.s)[0];
+      if (best && best.s >= 0.8) return pc.acts[best.i].run();
+    }
     let intent = null;
     let viaAi = false;
     if (aiUsable()) {
@@ -427,6 +737,55 @@
     if (!intent) intent = parse(text);
     lastAnswerAi = viaAi;
     for (const k of ['name', 'query']) if (intent[k]) intent[k] = applyAlias(intent[k]);
+    return handleIntent(intent, text);
+  }
+
+  /** Ask "Did you mean…?" with a button per close match (picking one also teaches Waldo the phrase). */
+  function askDidYouMean(heard, cands, onPick, noBtn, question) {
+    const names = cands.map((c) => c.name + (isMixed(c.it) ? ' (' + c.it.drawer + ')' : ''));
+    const acts = cands.map((c, i) => ({ label: (cands.length === 1 ? 'Yes — ' : '') + names[i], run: () => { learnAlias(heard, c.name); onPick(c); } }));
+    acts.push(noBtn || { label: 'No', run: () => answer('Okay — try saying it again, or type it.', 'Okay, say it again.') });
+    for (const a of acts) { const run = a.run; a.run = () => { pendingChoice = null; return run(); }; }
+    const list = cands.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' or ' + names[names.length - 1];
+    const spokenList = cands.length === 1 ? cands[0].name : cands.slice(0, -1).map((c) => c.name).join(', ') + ', or ' + cands[cands.length - 1].name;
+    const ret = question
+      ? answer(question(list), question(spokenList), acts)
+      : answer('I didn’t find “' + heard + '”. Did you mean ' + list + '?', 'Did you mean ' + spokenList + '?', acts);
+    pendingChoice = { acts, cands };   // a spoken "yes" / "no" / "the second one" answers it too
+    return ret || true;
+  }
+
+  /** For lookups: exact/word matches first; otherwise a close match is used (very close) or offered (close). */
+  function resolveLookup(intent, text) {
+    if (!intent.query) return null;
+    const found = findScored(intent.query);
+    if (found.length && found[0].score >= 60) return null;            // a real match: no guessing needed
+    const cands = fuzzyCandidates(intent.query).filter((c) => normalize(c.name) !== normalize(intent.query));
+    if (!cands.length) return null;                                    // only loose word overlaps (or nothing): handled as before
+    // Sure enough to just go: very close and clearly ahead — or the only close match, with every spoken word in it.
+    const clear = (cands[0].score >= FUZZY_AUTO && (cands.length === 1 || cands[0].score - cands[1].score >= 0.06)) ||
+      (cands.length === 1 && cands[0].score >= 0.8 && cands[0].cover >= 0.88);
+    if (clear) { fuzzyNote = 'I think you meant ' + cands[0].name + '. '; return handleIntent(Object.assign({}, intent, { query: cands[0].name }), text); }
+    return askDidYouMean(intent.query, cands, (c) => handleIntent(Object.assign({}, intent, { query: c.name }), text));
+  }
+  let fuzzyNote = '';
+  let pendingChoice = null;
+
+  async function handleIntent(intent, text) {
+    if (['find', 'count', 'remove'].includes(intent.type) || (intent.type === 'print' && intent.query && !/^(drawer\s+)?(label|tag|sticker)s?(\s+for)?$/i.test(intent.query))) {
+      const r = resolveLookup(intent, text);
+      if (r) return r;
+    }
+    if ((intent.type === 'add' || intent.type === 'bare') && intent.name && !strongMatch(intent.name) && !intent._checked) {
+      const cands = fuzzyCandidates(intent.name, 0.8);
+      if (cands.length) {
+        const again = Object.assign({}, intent, { _checked: true });
+        return askDidYouMean(intent.name, cands,
+          (c) => (intent.type === 'bare' && !intent.drawer ? focusItem(c.it, false, c.name) : handleIntent(Object.assign({}, again, { name: c.name }), text)),
+          { label: 'No — it’s new', run: () => handleIntent(again, text) },
+          (l) => 'Is “' + intent.name + '” the same as ' + l + ' you already have?');
+      }
+    }
     switch (intent.type) {
       case 'answer':
         return answer(intent.reply || 'I’m not sure.');
@@ -443,10 +802,10 @@
         return;
       }
       case 'find': {
-        const hits = findItems(intent.query);
+        const sc = findScored(intent.query), hits = sc.map((x) => x.it);
         if (!hits.length) return answer('No “' + intent.query + '” in inventory.', 'I don’t have ' + intent.query + ' in inventory.');
         $('filter').value = intent.query; render();
-        if (hits.length === 1 || matchedPart(hits[0], intent.query)) return focusItem(hits[0], false, intent.query);
+        if (hits.length === 1 || matchedPart(hits[0], intent.query) || (sc[0].score >= 80 && sc[1].score < 60)) return focusItem(hits[0], false, intent.query);
         const lines = hits.slice(0, 5).map((i) => '• ' + describe(i, intent.query)).join('\n');
         return answer(hits.length + ' matches:\n' + lines, hits.length + ' matches. First is ' + hits[0].name + ' in ' + hits[0].drawer + '.');
       }
@@ -508,6 +867,8 @@
         if (settings.askDrawer) return runCommand('add ' + intent.name);
         return stockIn(intent.name, null, intent.quantity);
       }
+      case 'printAll':
+        return printDrawerAll(intent.drawer);
       default:
         return answer('Didn’t understand “' + text + '”. Try “add X drawer 3” or “where is X”.', 'Sorry, I didn’t understand that.');
     }
@@ -652,6 +1013,7 @@
       { label: 'Used one', run: () => { setQuantity(it, it.quantity - 1); if (!it.deleted) focusItem(it, true); else answer('Used the last ' + it.name + ' — removed.', false); } },
       { label: 'Add one', run: () => { setQuantity(it, it.quantity + 1); focusItem(it, true); } },
       { label: 'Reprint', run: () => printItem(it) },
+      { label: 'On map', run: () => showOnMap(it.name) },
       { label: 'Edit', run: () => openItem(it) },
     ]);
   }
@@ -669,6 +1031,40 @@
     if (printer.connected) { answer('Printing the drawer label for ' + d.name + '…', false); return printDrawerLabel(d); }
     queuePrint({ d: d.name, c: d.category, m: d.mode });
     answer('The drawer label for ' + d.name + ' will print as soon as the printer connects.');
+  }
+
+  /** Batch: every label in one drawer (each tracked item, each part of a mixed drawer). Cancelable while it runs. */
+  function drawerItems(name) {
+    const k = String(name || '').trim().toLowerCase();
+    return live().filter((i) => i.drawer.toLowerCase() === k).sort((a, b) => a.name.localeCompare(b.name));
+  }
+  function drawerLabelEntries(name) {
+    const out = [];
+    for (const it of drawerItems(name)) {
+      if (isMixed(it)) for (const part of getContents(it)) out.push({ v: { name: part, drawer: it.drawer, category: it.category, mixed: true, qrId: it.id, createdAt: it.createdAt } });
+      else out.push(it.id);
+    }
+    return out;
+  }
+  function printDrawerAll(name, withDrawerLabel) {
+    if (!name) return answer('Which drawer? Try “print all the labels for drawer 3”.');
+    const d = cfgFor(name);
+    const dn = d ? d.name : ((drawerItems(name)[0] || {}).drawer || name);
+    const batch = drawerLabelEntries(dn);
+    if (withDrawerLabel) batch.unshift({ d: dn, c: d ? d.category : '', m: d ? d.mode : 'tracked' });
+    if (!batch.length) return answer(dn + ' is empty — nothing to print.', dn + ' is empty.');
+    for (const e of batch) if (typeof e !== 'string' || !printQueue.includes(e)) printQueue.push(e);
+    LS.set('jim.printQueue', printQueue); updatePrinterUi();
+    const n = batch.length, word = n + ' label' + (n === 1 ? '' : 's');
+    log('print', 'Batch: ' + word + ' for ' + dn);
+    const cancel = { label: 'Cancel these', run: () => {
+      const left = printQueue.filter((e) => batch.includes(e)).length;
+      printQueue = printQueue.filter((e) => !batch.includes(e)); LS.set('jim.printQueue', printQueue); updatePrinterUi();
+      answer(left ? 'Canceled ' + left + ' label' + (left === 1 ? '' : 's') + ' for ' + dn + '.' : 'Those labels already printed.', false);
+    } };
+    if (printer.connected) { answer('Printing ' + word + ' for ' + dn + '…', 'Printing ' + word + ' for ' + dn + '.', [cancel]); flushPrintQueue(); }
+    else answer(word + ' for ' + dn + ' will print as soon as the printer connects.', word + ' for ' + dn + ' will print when the printer connects.', [cancel]);
+    return n;
   }
 
   // Labels waiting for the printer (saved so a reload doesn't lose them)
@@ -710,7 +1106,13 @@
     });
   }
 
+  let flushing = false;
   async function flushPrintQueue() {
+    if (flushing) return;
+    flushing = true;
+    try { await flushNow(); } finally { flushing = false; }
+  }
+  async function flushNow() {
     while (printQueue.length && printer.connected) {
       const e = printQueue[0];
       let ok = true;
@@ -847,7 +1249,9 @@
   }
 
   // ---------------------------------------------------------------- QR codes (labels link back into the app)
-  const appBase = () => location.origin + location.pathname;
+  const appBase = () => (NATIVE || !/^https?:$/.test(location.protocol))
+    ? (window.WALDO_PUBLIC_URL || 'https://jwaltman22.github.io/Waldo-Inventory/')
+    : location.origin + location.pathname;
   const shortId = (id) => String(id).replace(/-/g, '').slice(0, 12).toLowerCase();
   const itemLink = (id) => appBase() + '#i=' + shortId(id);
   const drawerLink = (name) => appBase() + '#d=' + encodeURIComponent(name);
@@ -926,6 +1330,7 @@
   }
 
   async function bluetoothAvailable() {
+    if (NATIVE) return !!(N && N.NiimbotCapacitorBleClient);
     if (!navigator.bluetooth || !N) return false;
     try { return navigator.bluetooth.getAvailability ? await navigator.bluetooth.getAvailability() : true; } catch (e) { return true; }
   }
@@ -948,18 +1353,25 @@
     showAll = showAll === true;
     if (!(await bluetoothAvailable())) { $('btUnsupported').hidden = false; toast('Bluetooth printing isn’t available in this browser'); return; }
     if (printer.client) { try { await printer.client.disconnect(); } catch (e) { /* */ } }
-    const client = new N.NiimbotBluetoothClient();
+    const client = NATIVE ? new N.NiimbotCapacitorBleClient() : new N.NiimbotBluetoothClient();
     printer.client = client;
+    let connecting = true;
     client.on('disconnect', () => {
+      if (connecting) return; // the native client emits a stray "disconnect" while it sets up
       printer.connected = false; printer.busy = false;
       updatePrinterUi(); toast('Printer disconnected');
     });
     client.on('heartbeat', () => updatePrinterUi());
     setPrinterText('Connecting…', 'warn');
     try {
-      const device = await pickDevice(showAll);
-      setPrinterText('Connecting…', 'warn');
-      const res = await client.connect({ authorizedDevice: device });
+      let res;
+      if (NATIVE) res = await client.connect(); // the phone shows its own Bluetooth device picker
+      else {
+        const device = await pickDevice(showAll);
+        setPrinterText('Connecting…', 'warn');
+        res = await client.connect({ authorizedDevice: device });
+      }
+      connecting = false;
       printer.connected = true;
       printer.name = res.deviceName || 'NIIMBOT';
       printer.info = client.getPrinterInfo();
@@ -971,6 +1383,7 @@
       toast('Connected to ' + printer.name);
       flushPrintQueue();
     } catch (e) {
+      connecting = false;
       printer.connected = false;
       updatePrinterUi();
       const msg = String(e && e.message || e);
@@ -1087,8 +1500,9 @@
       $('printerInfo').textContent = 'Not connected. Turn the M2-H on, then tap Connect and pick it from the list (it shows as “M2_H-…”).';
     }
     $('connectBtn').hidden = printer.connected;
-    $('connectAllBtn').hidden = printer.connected;
-    $('findHelp').hidden = printer.connected;
+    $('connectAllBtn').hidden = printer.connected || NATIVE;
+    $('findHelp').hidden = printer.connected || NATIVE;
+    $('niimbotAppNote').hidden = false;
     $('disconnectBtn').hidden = !printer.connected;
     $('testPrintBtn').disabled = !printer.connected || printer.busy;
     renderQueue();
@@ -1109,43 +1523,89 @@
     updateSyncUi();
   }
 
+  // Sync that tells the truth: changes wait in a queue on the phone (saved with the item), go up when there's
+  // signal, retry with back-off, and the server merges two phones' edits instead of overwriting.
+  let syncFails = 0, retryTimer = null;
+  const toRemote = (r) => ({
+    id: r.id, name: r.name, drawer: r.drawer, quantity: Number(r.quantity) || 0, sku: r.sku || '', category: r.category || '',
+    notes: r.notes || '', createdAt: r.createdAt || r.updatedAt || Date.now(), updatedAt: r.updatedAt || 0,
+    lastPrintedAt: r.lastPrintedAt || null, deleted: !!r.deleted, dirty: false, syncedAt: Number(r.syncedAt) || 0, qtyBase: Number(r.quantity) || 0,
+  });
+  function friendlySyncError(e) {
+    const m = String(e && e.message || e);
+    if (/wrong passphrase/.test(m)) return 'wrong passphrase — check Settings';
+    if (/Unexpected token|JSON/i.test(m)) return 'the sync link didn’t answer with data — check the URL and that the Apps Script is deployed for “Anyone”';
+    if (/Failed to fetch|NetworkError|Load failed|network/i.test(m)) return 'no connection to Google — will retry';
+    return m;
+  }
   async function syncNow() {
     if (!settings.syncUrl || syncing) return;
+    if (!storeReady) { scheduleSync(300); return; }
     if (!navigator.onLine) { updateSyncUi(); return; }
+    clearTimeout(retryTimer);
     syncing = true; updateSyncUi();
     const outgoing = items.filter((i) => i.dirty).map((i) => {
-      const o = Object.assign({}, i); delete o.dirty; return o;
+      const o = Object.assign({}, i); delete o.dirty; delete o.qtyBase; delete o.syncedAt;
+      o.base = i.syncedAt || 0;                                              // the server version this edit started from
+      o.qtyBase = i.syncedAt && typeof i.qtyBase === 'number' ? i.qtyBase : null; // quantity at that version (so changes add up)
+      return o;
     });
-    const sentVersion = new Map(outgoing.map((o) => [o.id, o.updatedAt]));
+    const firstSync = !syncState.cursor;
+    const sent = new Map(outgoing.map((o) => [o.id, { updatedAt: o.updatedAt, quantity: o.quantity }]));
     try {
       const res = await fetch(settings.syncUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // keeps it a "simple" request (no CORS preflight)
-        body: JSON.stringify({ key: settings.syncKey, action: 'sync', since: syncState.cursor || 0, items: outgoing }),
+        body: JSON.stringify({ key: settings.syncKey, action: 'sync', proto: 2, since: syncState.cursor || 0, items: outgoing }),
         redirect: 'follow',
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error === 'bad_key' ? 'wrong passphrase' : (data.error || 'server error'));
       if (typeof data.ai === 'boolean' && data.ai !== aiState.ready) setAiState({ ready: data.ai, lastError: data.ai ? '' : 'no_ai_key' });
-      // our pushes landed — clear dirty flags unless edited again meanwhile
-      for (const it of items) if (it.dirty && sentVersion.get(it.id) === it.updatedAt) it.dirty = false;
-      // merge remote rows: newest edit wins
       const byId = new Map(items.map((i) => [i.id, i]));
+      let fromOthers = 0;
       for (const r of data.items || []) {
+        const remote = toRemote(r);
         const local = byId.get(r.id);
-        const remote = {
-          id: r.id, name: r.name, drawer: r.drawer, quantity: Number(r.quantity) || 0, sku: r.sku || '', category: r.category || '',
-          notes: r.notes || '', createdAt: r.createdAt || r.updatedAt || Date.now(), updatedAt: r.updatedAt || 0,
-          lastPrintedAt: r.lastPrintedAt || null, deleted: !!r.deleted, dirty: false,
-        };
-        if (!local) { items.push(remote); byId.set(r.id, remote); }
-        else if (!local.dirty && remote.updatedAt >= local.updatedAt) Object.assign(local, remote);
+        const mine = sent.get(r.id);
+        if (!local) { items.push(remote); byId.set(r.id, remote); if (!remote.deleted) fromOthers++; continue; }
+        if (mine) {
+          if (local.updatedAt === mine.updatedAt) {
+            // Our change landed. Take the server's copy: it may include another phone's change merged in.
+            const changed = remote.quantity !== local.quantity || remote.name !== local.name || remote.drawer !== local.drawer || remote.notes !== local.notes || remote.deleted !== local.deleted;
+            Object.assign(local, remote);
+            if (changed) fromOthers++;
+          } else {
+            // Edited again while we were sending: keep the new edit, rebased on the server's copy.
+            const delta = local.quantity - mine.quantity;
+            local.syncedAt = remote.syncedAt; local.qtyBase = remote.quantity;
+            if (!isMixed(local)) local.quantity = Math.max(0, remote.quantity + delta);
+          }
+          continue;
+        }
+        if (local.dirty) {
+          // Another phone changed it and we have an edit waiting: the server will merge when we send ours.
+          continue;
+        }
+        if ((remote.syncedAt || 0) >= (local.syncedAt || 0) || remote.updatedAt >= local.updatedAt) {
+          const changed = remote.updatedAt !== local.updatedAt || remote.quantity !== local.quantity || remote.deleted !== local.deleted;
+          Object.assign(local, remote);
+          if (changed && !isConfig(local)) fromOthers++;
+        }
       }
       syncState.cursor = Math.max(0, (data.serverTime || Date.now()) - 2000); // small overlap; merges are idempotent
       syncState.lastOk = Date.now(); syncState.lastError = '';
-      LS.set('jim.items', items); saveSyncState(); render();
+      syncState.merged = Number(data.merged) || 0;
+      syncFails = 0;
+      persist('jim.items', items); saveSyncState(); render();
+      if (data.merged) { toast('Merged ' + data.merged + ' change' + (data.merged > 1 ? 's' : '') + ' with another phone’s edits'); log('sync', 'Merged ' + data.merged + ' change' + (data.merged > 1 ? 's' : '') + ' with another device'); }
+      else if (fromOthers && !firstSync) toast(fromOthers + ' update' + (fromOthers > 1 ? 's' : '') + ' from another device');
     } catch (e) {
-      syncState.lastError = String(e && e.message || e); saveSyncState();
+      syncFails++;
+      syncState.lastError = friendlySyncError(e); saveSyncState();
+      const wait = Math.min(60000, 2000 * Math.pow(2, syncFails - 1));   // 2s, 4s, 8s … up to a minute
+      syncState.retryAt = Date.now() + wait;
+      clearTimeout(retryTimer); retryTimer = setTimeout(syncNow, wait);
     } finally {
       syncing = false; updateSyncUi();
       if (items.some((i) => i.dirty) && !syncState.lastError) scheduleSync(500);
@@ -1158,7 +1618,11 @@
     if (!settings.syncUrl) { text = 'Local'; state = ''; info = 'Sync is off — inventory is stored on this device only. Add a sync URL to share it across devices.'; }
     else if (syncing) { text = 'Syncing…'; state = 'warn'; info = 'Syncing…'; }
     else if (!navigator.onLine) { text = pending ? 'Offline (' + pending + ')' : 'Offline'; state = 'warn'; info = 'Offline — changes are saved here and will sync when back online.'; }
-    else if (syncState.lastError) { text = 'Sync error'; state = 'bad'; info = 'Last sync failed: ' + syncState.lastError; }
+    else if (syncState.lastError) {
+      text = pending && !/passphrase|sync link/.test(syncState.lastError) ? 'Retrying (' + pending + ')' : 'Sync error'; state = 'bad';
+      const secs = Math.max(0, Math.round(((syncState.retryAt || 0) - Date.now()) / 1000));
+      info = 'Couldn’t sync: ' + syncState.lastError + '. ' + (pending ? pending + ' change(s) are safe on this phone and will go up automatically' + (secs ? ' (next try in ' + secs + 's)' : '') + '.' : 'Will try again shortly.');
+    }
     else if (pending) { text = 'Pending ' + pending; state = 'warn'; info = pending + ' change(s) waiting to sync.'; }
     else { text = 'Synced'; state = 'ok'; info = syncState.lastOk ? 'Last synced ' + new Date(syncState.lastOk).toLocaleString() : 'Not synced yet.'; }
     $('syncText').textContent = text;
@@ -1334,32 +1798,79 @@
   }
 
   // ---- Drawers tab
+  /** Every drawer name: the configured ones plus any drawer an item mentions. Sorted naturally (Drawer 2 before Drawer 10). */
+  function allDrawerNames() {
+    const names = drawerCfg().map((d) => d.name);
+    for (const i of live()) if (i.drawer && !names.some((n) => n.toLowerCase() === i.drawer.toLowerCase())) names.push(i.drawer);
+    return names.sort((x, y) => x.localeCompare(y, undefined, { numeric: true }));
+  }
+  const drawerShort = (name) => (String(name).match(/[A-Z]?-?\d+[A-Z]?$/i) || [String(name).slice(0, 2)])[0].toUpperCase();
+  function drawerSummary(name) {
+    const d = cfgFor(name) || { name, category: '', mode: 'tracked' };
+    const inside = drawerItems(name);
+    const mixedBox = inside.find(isMixed);
+    const tracked = inside.filter((i) => !isMixed(i));
+    const parts = mixedBox ? getContents(mixedBox).length : 0;
+    const units = tracked.reduce((s2, i) => s2 + i.quantity, 0);
+    const bits = [];
+    if (d.mode === 'mixed' || mixedBox) bits.push('Mixed · ' + parts + (parts === 1 ? ' part' : ' parts'));
+    if (tracked.length) bits.push(tracked.length + ' item' + (tracked.length > 1 ? 's' : '') + ' · ' + units + ' unit' + (units === 1 ? '' : 's'));
+    return { d, inside, tracked, mixedBox, labels: tracked.length + parts, text: bits.join(' · ') || 'Empty', empty: !inside.length };
+  }
+  let mapHighlight = '';   // search text highlighted on the map
+  function mapCols() { const n = +cfgData().mapCols; return n >= 1 && n <= 8 ? n : 3; }
+
   function renderDrawers() {
     const root = $('drawerList');
     if (!root) return;
     root.textContent = '';
-    const all = live();
-    const cfg = drawerCfg();
-    const names = cfg.map((d) => d.name);
-    for (const i of all) if (!names.some((n) => n.toLowerCase() === i.drawer.toLowerCase())) names.push(i.drawer);
-    names.sort((x, y) => x.localeCompare(y, undefined, { numeric: true }));
+    const view = settings.drawerView === 'list' ? 'list' : 'map';
+    document.querySelectorAll('#drawerViewSeg button').forEach((b) => b.classList.toggle('on', b.dataset.view === view));
+    $('mapTools').hidden = view !== 'map';
+    root.className = view === 'map' ? 'dmap' : 'list';
+    const names = allDrawerNames();
+    if (view === 'map') {
+      root.style.gridTemplateColumns = 'repeat(' + mapCols() + ', minmax(0, 1fr))';
+      $('mapColsVal').textContent = mapCols();
+      const q = mapHighlight.trim();
+      let hitDrawers = null;
+      if (q) {
+        hitDrawers = new Set();
+        const hits = findItems(q);
+        (hits.length ? hits : fuzzyCandidates(q, 0.6).map((c) => c.it)).forEach((i) => hitDrawers.add(i.drawer.toLowerCase()));
+        names.forEach((n) => { if (n.toLowerCase().includes(q.toLowerCase())) hitDrawers.add(n.toLowerCase()); });
+        $('mapHint').textContent = hitDrawers.size ? '“' + q + '” is in ' + names.filter((n) => hitDrawers.has(n.toLowerCase())).join(', ') : 'No drawer has “' + q + '”.';
+      } else $('mapHint').textContent = 'Tap a drawer to see what’s inside.';
+      for (const name of names) {
+        const S = drawerSummary(name);
+        const t = el('button', 'tile' + (S.empty ? ' empty' : '') + (hitDrawers ? (hitDrawers.has(name.toLowerCase()) ? ' hit' : ' dim') : ''));
+        t.type = 'button';
+        t.style.setProperty('--c', drawerColor(name));
+        t.dataset.drawer = name;
+        t.appendChild(el('span', 'tnum', drawerShort(name)));
+        t.appendChild(el('span', 'tcat', S.d.category || (S.empty ? 'Empty' : name)));
+        t.appendChild(el('span', 'tcount', S.empty ? '—' : S.mixedBox && !S.tracked.length ? S.labels + (S.labels === 1 ? ' part' : ' parts') : S.tracked.length + (S.tracked.length === 1 ? ' item' : ' items') + (S.mixedBox ? ' + mix' : '')));
+        t.onclick = () => openDrawerSheet(name);
+        root.appendChild(t);
+      }
+      return;
+    }
+    root.style.gridTemplateColumns = '';
     for (const name of names) {
-      const d = cfgFor(name) || { name, category: '', mode: 'tracked' };
-      const inside = all.filter((i) => i.drawer.toLowerCase() === name.toLowerCase());
+      const S = drawerSummary(name), d = S.d;
       const card = el('div', 'dcard');
-      const num = el('div', 'dnum', (name.match(/[A-Z]?-?\d+[A-Z]?$/i) || [name.slice(0, 2)])[0].toUpperCase());
+      const num = el('div', 'dnum', drawerShort(name));
       num.style.background = drawerColor(name);
       const mid = el('div');
       mid.appendChild(el('div', 'dname', name + (d.category ? ' · ' + d.category : '')));
-      const mixedBox = inside.find(isMixed);
-      const tracked = inside.filter((i) => !isMixed(i));
-      const bits = [];
-      if (d.mode === 'mixed') { const n = mixedBox ? getContents(mixedBox).length : 0; bits.push('Mixed · ' + n + (n === 1 ? ' part' : ' parts')); }
-      const units = tracked.reduce((s2, i) => s2 + i.quantity, 0);
-      if (tracked.length) bits.push(tracked.length + ' item' + (tracked.length > 1 ? 's' : '') + ' · ' + units + ' unit' + (units === 1 ? '' : 's'));
-      if (!bits.length) bits.push('Empty');
-      mid.appendChild(el('div', 'dsub', bits.join(' · ')));
+      mid.appendChild(el('div', 'dsub', S.text));
       const acts = el('div', 'dacts');
+      if (S.labels) {
+        const pa = el('button', 'btn sm'); pa.append(icon('print', 14), document.createTextNode('All ' + S.labels));
+        pa.title = 'Print every label in this drawer';
+        pa.onclick = (e) => { e.stopPropagation(); printDrawerAll(name); };
+        acts.appendChild(pa);
+      }
       const lb = el('button', 'btn sm'); lb.append(icon('print', 14), document.createTextNode('Label'));
       lb.onclick = (e) => { e.stopPropagation(); printOrQueueDrawer(d); };
       acts.appendChild(lb);
@@ -1369,6 +1880,39 @@
       root.appendChild(card);
     }
   }
+
+  /** Drawer sheet (from the map): what's inside, plus batch print. */
+  function openDrawerSheet(name) {
+    const S = drawerSummary(name), d = S.d;
+    $('dsTitle').textContent = name + (d.category ? ' · ' + d.category : '');
+    $('dsSub').textContent = S.text;
+    const box = $('dsList'); box.textContent = '';
+    if (S.empty) box.appendChild(el('div', 'kv', 'Nothing in this drawer yet.'));
+    for (const it of S.inside) {
+      if (isMixed(it)) {
+        for (const part of getContents(it)) { const r = el('div', 'qrow'); r.appendChild(el('div', 'qtxt', part)); r.lastChild.appendChild(el('small', null, 'mixed')); box.appendChild(r); }
+        continue;
+      }
+      const r = el('div', 'qrow');
+      const t = el('div', 'qtxt', it.name); t.appendChild(el('small', null, '×' + it.quantity));
+      const b = el('button', null, '›'); b.type = 'button'; b.style.color = 'var(--muted)'; b.setAttribute('aria-label', 'Open ' + it.name);
+      r.onclick = () => { $('drawerSheet').close(); openItem(it); };
+      r.append(t, b); box.appendChild(r);
+    }
+    const pa = $('dsPrintAll');
+    pa.hidden = !S.labels; pa.textContent = 'Print all ' + S.labels + ' label' + (S.labels === 1 ? '' : 's');
+    pa.onclick = () => { $('drawerSheet').close(); printDrawerAll(name); };
+    $('dsDrawerLabel').onclick = () => { $('drawerSheet').close(); printOrQueueDrawer(d); };
+    $('dsShow').onclick = () => { $('drawerSheet').close(); switchTab('items'); focusDrawer(name); };
+    $('drawerSheet').showModal();
+  }
+  function showOnMap(text) {
+    mapHighlight = text || '';
+    settings.drawerView = 'map'; saveSettings();
+    if ($('mapSearch')) $('mapSearch').value = mapHighlight;
+    switchTab('drawers'); renderDrawers();
+  }
+
 
   // ---- tabs
   let currentTab = 'items';
@@ -1450,7 +1994,7 @@
   function log(type, text) {
     activity.unshift({ t: Date.now(), type, text, by: String(settings.userName || '').trim() });
     if (activity.length > 300) activity.length = 300;
-    LS.set('jim.activity', activity);
+    persist('jim.activity', activity);
     renderActivity();
   }
   function ago(t) {
@@ -1649,9 +2193,35 @@
     f.aiEnabled.checked = settings.aiEnabled !== false;
     updateAiUi();
     f.voiceRate.value = settings.voiceRate || 1;
-    updateSyncUi();
+    updateSyncUi(); renderBackups();
     $('settingsDlg').showModal();
   }
+  async function renderBackups() {
+    const box = $('backupList'); if (!box) return;
+    const idb = await Store.available();
+    let usage = '';
+    try { if (navigator.storage && navigator.storage.estimate) { const e = await navigator.storage.estimate(); usage = ' · ' + Math.max(1, Math.round((e.usage || 0) / 1024)) + ' KB used'; } } catch (e) { /* */ }
+    let persisted = false;
+    try { persisted = !!(navigator.storage && navigator.storage.persisted && await navigator.storage.persisted()); } catch (e) { /* */ }
+    $('storeInfo').textContent = idb
+      ? 'Saved in this phone’s database (IndexedDB)' + (persisted ? ', protected from automatic clean-up' : '') + usage + '. A snapshot is taken every few hours; the last ' + BACKUP_KEEP + ' are kept.'
+      : 'This browser has no database storage, so the app is using basic storage (about 5 MB). Use Export backup now and then.';
+    box.textContent = '';
+    const list = idb ? await Store.backups() : [];
+    box.hidden = !list.length;
+    for (const b of list) {
+      const r = el('div', 'qrow');
+      const t = el('div', 'qtxt', new Date(b.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }));
+      t.appendChild(el('small', null, b.count + ' items' + (b.reason && b.reason !== 'auto' ? ' · ' + b.reason : '')));
+      const go = el('button', 'btn sm', 'Restore'); go.type = 'button'; go.style.cssText = 'width:auto;color:var(--ink);font-size:13px';
+      go.onclick = () => {
+        if (!go.dataset.armed) { go.dataset.armed = '1'; go.textContent = 'Tap again'; go.style.color = 'var(--bad)'; setTimeout(() => { if (go.isConnected) { delete go.dataset.armed; go.textContent = 'Restore'; go.style.color = 'var(--ink)'; } }, 4000); return; }
+        restoreBackup(b.at);
+      };
+      r.append(t, go); box.appendChild(r);
+    }
+  }
+  $('backupNowBtn').onclick = async () => { await autoBackup(true, 'manual'); renderBackups(); toast('Backup saved on this phone'); };
   $('settingsForm').addEventListener('submit', (e) => {
     if (e.submitter && e.submitter.value === 'cancel') return;
     const f = $('settingsForm');
@@ -1668,7 +2238,7 @@
     settings.voiceName = f.voiceName.value; settings.voiceRate = +f.voiceRate.value || 1;
     settings.aiEnabled = f.aiEnabled.checked;
     if (newUrl !== (settings._lastAiUrl || '')) { settings._lastAiUrl = newUrl; setAiState({ ready: null, lastError: '' }); }
-    saveSettings(); LS.set('jim.items', items);
+    saveSettings(); persist('jim.items', items);
     renderGreeting();
     scheduleSync(100);
   });
@@ -1739,6 +2309,12 @@
     $('drawersDlg').showModal();
   }
   $('drawersBtn').onclick = () => { $('settingsDlg').close(); openDrawers(); };
+  document.querySelectorAll('#drawerViewSeg button').forEach((b) => { b.onclick = () => { settings.drawerView = b.dataset.view; saveSettings(); renderDrawers(); }; });
+  $('mapSearch').addEventListener('input', (e) => { mapHighlight = e.target.value; renderDrawers(); });
+  const setCols = (n) => { n = Math.max(1, Math.min(8, n)); if (n !== mapCols()) { writeCfg(Object.assign(cfgData(), { drawers: drawerCfg() , mapCols: n })); } renderDrawers(); };
+  $('mapColsMinus').onclick = () => setCols(mapCols() - 1);
+  $('mapColsPlus').onclick = () => setCols(mapCols() + 1);
+  $('dsClose').onclick = () => $('drawerSheet').close();
   $('addDrawerRow').onclick = () => {
     const n = $('drawerRows').children.length + 1;
     const row = drawerRow({ name: 'Drawer ' + n, category: '', keywords: '', mode: 'tracked' });
@@ -1890,7 +2466,7 @@
   $('activityMore').onclick = () => { activityAll = !activityAll; renderActivity(); };
 
   // main controls
-  $('micBtn').onclick = startListening;
+  $('micBtn').onclick = () => { if (handsFree) return setHandsFree(false); startListening(); };
   $('cmdForm').addEventListener('submit', (e) => {
     e.preventDefault();
     const v = $('cmdInput').value.trim();
@@ -1907,7 +2483,7 @@
     clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
   }
 
-  if (!SR) $('voiceHint').textContent = 'Tap the mic, then the 🎤 on your keyboard. Say an item name — I’ll pick the drawer and print the label.';
+  if (!SR && !NB.SpeechRecognition) $('voiceHint').textContent = 'Tap the mic, then the 🎤 on your keyboard. Say an item name — I’ll pick the drawer and print the label.';
   setInterval(renderGreeting, 60000);
 
   window.addEventListener('online', () => scheduleSync(200));
@@ -1915,14 +2491,28 @@
   document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleSync(200); });
   setInterval(() => { if (!document.hidden) syncNow(); }, 45000);
 
-  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  if (!NATIVE && 'serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('sw.js').catch(() => { /* optional */ });
   }
 
   // test hooks (harmless in production)
-  window.JimApp = { applyAlias, getAliases, runCommand, findItems, renderLabel, renderDrawerLabel, printItem, connectPrinter, syncNow, handleLink, drawerCfg, saveDrawerCfg, itemLink,
+  window.JimApp = { cancelQueued, printDrawerAll, findScored, nameSim, fuzzyCandidates, soundKey, NATIVE, applyAlias, getAliases, runCommand, findItems, renderLabel, renderDrawerLabel, printItem, connectPrinter, syncNow, handleLink, drawerCfg, saveDrawerCfg, itemLink,
     get items() { return items; }, get activity() { return activity; }, printer, settings };
 
   switchTab('items');
-  render(); updatePrinterUi(); updateSyncUi(); scheduleSync(300); checkHash();
+  render(); updatePrinterUi(); updateSyncUi(); checkHash();
+  // Storage start-up: pick up a newer IndexedDB copy, then allow sync and backups.
+  (async () => {
+    try {
+      const newer = await loadNewer('jim.items', items);
+      if (newer) items = newer;
+      const act = await loadNewer('jim.activity', activity);
+      if (act) activity = act;
+    } catch (e) { /* fall back to what localStorage had */ }
+    storeReady = true;
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) { /* */ }
+    try { const bl = await Store.backups(); lastBackupAt = bl.length ? bl[0].at : 0; } catch (e) { /* */ }
+    autoBackup();
+    render(); renderActivity(); updateSyncUi(); scheduleSync(300);
+  })();
 })();

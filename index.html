@@ -149,6 +149,8 @@
   /* shared controls */
   input, select, textarea { width: 100%; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 11px 12px; outline: none; font-size: 16px; }
   input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .search input:focus { border: 0; box-shadow: none; }
+  .search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
   .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 40px; border: 1px solid var(--line); background: var(--surface);
     border-radius: 11px; padding: 0 14px; font-weight: 600; font-size: 14px; color: var(--ink); box-shadow: var(--shadow-sm); }
   .btn.primary { background: var(--ink); color: var(--bg); border-color: transparent; }
@@ -322,7 +324,12 @@
   #micBtn { width: 64px; height: 64px; flex: none; background: var(--grad); box-shadow: 0 10px 26px -8px rgba(0,80,160,.55), inset 0 1px 0 rgba(255,255,255,.25); }
   #micBtn::after { inset: -6px; border-color: color-mix(in srgb, var(--sky) 35%, transparent); }
   #micBtn svg { width: 26px; height: 26px; }
-  .assist-text { min-width: 0; }
+  .assist-text { min-width: 0; flex: 1; }
+  .hf { flex: none; align-self: center; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 11px; border-radius: 999px;
+    border: 1px solid var(--line-2); background: var(--surface); color: var(--ink-2); font-size: 12.5px; font-weight: 700; }
+  .hf .hfdot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); opacity: .5; }
+  .hf[aria-pressed="true"] { background: color-mix(in srgb, var(--good, #16a34a) 14%, var(--surface)); border-color: color-mix(in srgb, var(--good, #16a34a) 45%, transparent); color: var(--ink); }
+  .hf[aria-pressed="true"] .hfdot { background: var(--good, #16a34a); opacity: 1; animation: ring 1.6s ease-out infinite; }
   .assist-text .mic-label { font-size: 16px; font-weight: 700; color: var(--ink); text-align: left; }
   .assist-text .hint { text-align: left; margin-top: 2px; }
   #transcript { text-align: left; min-height: 0; }
@@ -360,6 +367,25 @@
   .dname { font-weight: 750; font-size: 16px; }
   .dsub { color: var(--muted); font-size: 13px; margin-top: 2px; }
   .dacts { display: flex; gap: 6px; }
+  #drawerViewSeg { margin-left: auto; margin-right: 10px; }
+  .dmap { display: grid; gap: 10px; }
+  .tile { position: relative; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--c) 12%, var(--surface));
+    box-shadow: var(--shadow-sm); min-height: 92px; padding: 10px 8px 9px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px; color: var(--ink); text-align: center; border-top: 5px solid var(--c); transition: transform .12s, opacity .2s; min-width: 0; }
+  .tile:active { transform: scale(.97); }
+  .tile .tnum { font-size: 22px; font-weight: 800; line-height: 1.1; color: var(--c); }
+  .tile .tcat { font-size: 12.5px; font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile .tcount { font-size: 11.5px; color: var(--muted); font-weight: 600; }
+  .tile.empty { background: var(--surface); border-style: dashed; border-top-style: solid; }
+  .tile.dim { opacity: .35; }
+  .tile.hit { outline: 3px solid var(--accent); outline-offset: 1px; box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 35%, transparent); }
+  .colstep { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .colstep button { width: 26px; height: 26px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--surface); color: var(--ink); font-weight: 700; }
+  .colstep b { min-width: 1.2ch; text-align: center; color: var(--ink); }
+  #mapTools .list-meta { gap: 10px; }
+  #mapHint { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .ds-list { max-height: 46vh; overflow: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  .ds-list .qrow { cursor: pointer; }
 
   /* item sheet quick bar */
   .quickbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -436,6 +462,7 @@
           <div class="mic-label" id="micLabel">Tap to speak</div>
           <div class="hint" id="voiceHint">Say an item name — I’ll pick the drawer and print the label.</div>
         </div>
+        <button type="button" class="hf" id="handsFreeBtn" aria-pressed="false" title="Keep listening between items"><span class="hfdot"></span>Hands-free</button>
       </div>
       <div id="transcript"></div>
       <form class="composer" id="cmdForm" autocomplete="off">
@@ -455,7 +482,16 @@
   </section>
 
   <section data-pane="drawers" hidden>
-    <div class="section-head"><h2>Drawers</h2><button class="link" id="editDrawersBtn">Edit setup</button></div>
+    <div class="section-head"><h2>Drawers</h2>
+      <div class="seg" id="drawerViewSeg"><button type="button" data-view="map">Map</button><button type="button" data-view="list">List</button></div>
+      <button class="link" id="editDrawersBtn">Edit setup</button></div>
+    <div id="mapTools">
+      <div class="search">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="mapSearch" type="search" placeholder="Find on the map (e.g. AA batteries)">
+      </div>
+      <div class="list-meta"><span id="mapHint"></span><span class="colstep">Columns <button type="button" id="mapColsMinus" aria-label="Fewer columns">−</button><b id="mapColsVal">3</b><button type="button" id="mapColsPlus" aria-label="More columns">+</button></span></div>
+    </div>
     <div class="list" id="drawerList"></div>
   </section>
 
@@ -597,7 +633,7 @@
 <!-- Settings / sync -->
 <dialog id="settingsDlg">
   <form class="dlg" method="dialog" id="settingsForm">
-    <h2>Settings <span class="kv" style="font-weight:500">· v16</span></h2>
+    <h2>Settings <span class="kv" style="font-weight:500">· v18</span></h2>
     <label>Your name<input name="userName" autocomplete="given-name" placeholder="e.g. Jim" maxlength="40"></label>
     <button class="settings-link" type="button" id="drawersBtn"><span>Drawers &amp; categories<small>Which drawer holds what, mixed drawers, drawer labels</small></span><span aria-hidden="true">›</span></button>
     <div class="section-label">Appearance</div>
@@ -633,6 +669,10 @@
       <button class="btn" type="button" id="importBtn">Import backup</button>
       <input type="file" id="importFile" accept="application/json,.json" hidden>
     </div>
+    <div class="section-label">Storage &amp; automatic backups</div>
+    <div class="kv" id="storeInfo"></div>
+    <div class="ds-list" id="backupList"></div>
+    <div class="btns" style="justify-content:flex-start"><button class="btn" type="button" id="backupNowBtn">Back up now</button></div>
     <div class="btns">
       <button class="btn" value="cancel" formnovalidate>Cancel</button>
       <button class="btn primary" type="submit" value="save">Save</button>
@@ -654,6 +694,22 @@
   </form>
 </dialog>
 
+<!-- Drawer sheet (from the map) -->
+<dialog id="drawerSheet">
+  <div class="dlg">
+    <h2 id="dsTitle">Drawer</h2>
+    <div class="kv" id="dsSub"></div>
+    <div class="ds-list" id="dsList"></div>
+    <div class="btns" style="flex-wrap:wrap">
+      <button class="btn primary" type="button" id="dsPrintAll">Print all labels</button>
+      <button class="btn" type="button" id="dsDrawerLabel">Drawer label</button>
+      <button class="btn" type="button" id="dsShow">Show in Items</button>
+      <span style="flex:1"></span>
+      <button class="btn" type="button" id="dsClose">Close</button>
+    </div>
+  </div>
+</dialog>
+
 <!-- QR scanner -->
 <dialog id="scanDlg">
   <div class="dlg">
@@ -669,9 +725,9 @@
   </div>
 </dialog>
 
-<script src="niimbluelib.js?v=16"></script>
-<script src="qr.js?v=16"></script>
-<script src="parser.js?v=16"></script>
-<script src="app.js?v=16"></script>
+<script src="niimbluelib.js?v=18"></script>
+<script src="qr.js?v=18"></script>
+<script src="parser.js?v=18"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>

@@ -53,6 +53,28 @@
   const LEAD_NUM = new RegExp('^(' + Object.keys(NUMBER_WORDS).join('|') + ')\\s+(?=\\S)', 'i');
   const COUNT_TAIL = /\s+(?:do i have|do we have|are there|are left|have i got|in stock|on hand|left)\s*$/i;
 
+  // Speech-to-text writes sound-alikes: "for" for 4, "to/too" for 2, "won" for 1, "ate" for 8 — and "four" for "for".
+  // Fix them only where the meaning is clear from the words around them.
+  const HOMO = { for: '4', fore: '4', four: '4', to: '2', too: '2', two: '2', won: '1', ate: '8' };
+  const HOMO_RE = '(for|fore|to|too|won|ate)';
+  const QTY_VERBS = "(?:just\\s+)?(?:add(?:ed)?|got in|got|have|received|stock(?:ed)?|put away|log(?:ged)?|check(?:ed)? in|bought|picked up|grabbed|used up|used|took out|take out|took|remove|need|ordered|returned)";
+  const NOT_A_NOUN = '(?:the|a|an|my|our|your|this|that|these|those|it|them|me|you|us|drawer|bin|shelf|cabinet|slot|box|tray|rack|stock|inventory|work|go|be|do|see|use|print|find|put|get|take|make|have|order|replace|fix|check|keep|the\\b)';
+  function fixHomophones(text) {
+    let s = String(text || '');
+    // "drawer for" → drawer 4, "bin to" → bin 2
+    s = s.replace(new RegExp('\\b(' + LOCATION_WORDS + ')\\s+(?:number\\s+)?' + HOMO_RE + '\\b', 'gi'), (m, loc, w) => loc + ' ' + HOMO[w.toLowerCase()]);
+    // "got in for AA batteries" → got in 4 AA batteries; "used up to of the bolts" → used up 2 of… (not "add to drawer 3", "got in to the shop")
+    s = s.replace(new RegExp('^((?:[\\w\'’]+\\s+){0,4}?' + QTY_VERBS + ')\\s+' + HOMO_RE + '\\s+(?!' + NOT_A_NOUN + '\\b)(?=[a-z0-9])', 'i'),
+      (m, verb, w) => verb + ' ' + HOMO[w.toLowerCase()] + ' ');
+    // "for of the bolts", "to pieces" → numbers;  "qty for" / "x to" → numbers
+    s = s.replace(new RegExp('\\b' + HOMO_RE + '\\s+(of|pieces|pcs|units|packs|boxes|rolls|pairs|sets)\\b', 'gi'), (m, w, tail) => HOMO[w.toLowerCase()] + ' ' + tail);
+    s = s.replace(new RegExp('\\b(qty|quantity|times|x)\\s+' + HOMO_RE + '\\b', 'gi'), (m, q, w) => q + ' ' + HOMO[w.toLowerCase()]);
+    // "four" that means "for": "a label four the bolts", "look four", "where's a cover four the pitot tube"
+    s = s.replace(/\b(labels?|look|looking|search|searching|room|cover|covers|case|charger|adapter|parts?|kit)\s+four\b/gi, (m, a) => a + ' for');
+    s = s.replace(/\bfour\s+(?=(?:the|a|an|my|our|this|that|these|those|it|them|drawer|bin)\b)/gi, (m) => (m[0] === 'F' ? 'For ' : 'for '));
+    return s;
+  }
+
   function startsWithWord(lower, p) {
     return lower === p || lower.startsWith(p + ' ') || lower.startsWith(p + ',');
   }
@@ -80,7 +102,7 @@
     const original = String(rawInput || '');
     let raw = original.trim().replace(/[.!?]+$/, '');
     if (!raw) return { type: 'unknown', raw: original };
-    raw = wordsToDigits(raw);
+    raw = wordsToDigits(fixHomophones(raw));
     // Strip "I just…" / "we've got…" etc. when what's left starts with a known command verb.
     const lead = raw.replace(LEAD, '');
     if (lead !== raw && lead && Object.values(VERBS).some((vs) => vs.some((p) => startsWithWord(lead.toLowerCase(), p)))) raw = lead;
@@ -141,7 +163,7 @@
     return String(s || '').toLowerCase().trim().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
   }
 
-  const api = { parse, normalize };
+  const api = { parse, normalize, fixHomophones };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.JimParser = api;
 })(typeof window !== 'undefined' ? window : globalThis);

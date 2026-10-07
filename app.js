@@ -10,7 +10,7 @@
   // Running inside the native iPhone/Android app (Capacitor)? Then use the phone's own Bluetooth, speech and voice.
   const NATIVE = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
   const NB = NATIVE ? (window.NativeBridge || {}) : {};
-  const { parse, normalize } = window.JimParser;
+  const { parse, normalize, fixHomophones } = window.JimParser;
   const $ = (id) => document.getElementById(id);
 
   // ---------------------------------------------------------------- storage
@@ -622,7 +622,7 @@
   }
   $('handsFreeBtn').onclick = () => setHandsFree(!handsFree);
 
-  // ---------------------------------------------------------------- AI understanding (Gemini via the Apps Script)
+  // ---------------------------------------------------------------- AI understanding (Grok or Gemini, via the Apps Script)
   let aiState = LS.get('jim.ai', { ready: null, lastError: '', lastOk: 0 });
   let lastAnswerAi = false;
   const aiUsable = () => settings.aiEnabled !== false && !!settings.syncUrl && navigator.onLine && aiState.ready !== false;
@@ -667,7 +667,7 @@
   }
   async function aiInterpret(text) {
     const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timer = setTimeout(() => ctl && ctl.abort(), 9000);
+    const timer = setTimeout(() => ctl && ctl.abort(), 15000);
     try {
       const res = await fetch(settings.syncUrl, {
         method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow', signal: ctl ? ctl.signal : undefined,
@@ -680,7 +680,7 @@
         return null;
       }
       const intent = aiToIntent(data.result, text);
-      setAiState({ ready: true, lastError: intent ? '' : 'unclear', lastOk: Date.now() });
+      setAiState({ ready: true, provider: data.provider || aiState.provider || '', lastError: intent ? '' : 'unclear', lastOk: Date.now() });
       return intent;
     } catch (e) {
       setAiState({ lastError: e && e.name === 'AbortError' ? 'timed out' : String(e && e.message || e) });
@@ -695,8 +695,8 @@
     else if (!settings.syncUrl) t = 'Needs sync set up first (the AI runs through your Google Apps Script).';
     else if (aiState.ready === false) t = aiState.lastError === 'bad_action'
       ? 'Your Apps Script is an older version — paste in the new Code.gs and deploy a new version.'
-      : 'Not set up yet — add GEMINI_API_KEY in your Apps Script’s Script Properties.';
-    else if (aiState.ready === true) t = '✓ Gemini connected' + (aiState.lastError && aiState.lastError !== 'unclear' ? ' (last problem: ' + aiState.lastError + ')' : '') + '.';
+      : 'Not set up yet — add GROK_API_KEY or GEMINI_API_KEY in your Apps Script’s Script Properties.';
+    else if (aiState.ready === true) t = '✓ ' + (aiState.provider === 'grok' ? 'Grok' : aiState.provider === 'gemini' ? 'Gemini' : 'AI') + ' connected' + (aiState.lastError && aiState.lastError !== 'unclear' ? ' (last problem: ' + aiState.lastError + ')' : '') + '.';
     else t = 'Will connect on the next sync or command.';
     st.textContent = t;
   }
@@ -730,7 +730,7 @@
     let viaAi = false;
     if (aiUsable()) {
       $('transcript').textContent = '“' + text + '” · thinking…';
-      intent = await aiInterpret(text);
+      intent = await aiInterpret(fixHomophones(text));   // "got in for AA batteries" → 4
       viaAi = !!intent;
       $('transcript').textContent = '“' + text + '”';
     }
@@ -1561,7 +1561,7 @@
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error === 'bad_key' ? 'wrong passphrase' : (data.error || 'server error'));
-      if (typeof data.ai === 'boolean' && data.ai !== aiState.ready) setAiState({ ready: data.ai, lastError: data.ai ? '' : 'no_ai_key' });
+      if (typeof data.ai === 'boolean' && (data.ai !== aiState.ready || (data.aiProvider || '') !== (aiState.provider || ''))) setAiState({ ready: data.ai, provider: data.aiProvider || '', lastError: data.ai ? '' : 'no_ai_key' });
       const byId = new Map(items.map((i) => [i.id, i]));
       let fromOthers = 0;
       for (const r of data.items || []) {

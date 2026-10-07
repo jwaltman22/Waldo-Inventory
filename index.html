@@ -344,6 +344,13 @@
   .item { display: grid; grid-template-columns: auto 1fr auto; gap: 0 12px; align-items: start; padding: 14px 12px 14px 14px; cursor: pointer; border-radius: var(--radius); }
   .avatar { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; color: #fff; flex: none;
     box-shadow: inset 0 -2px 0 rgba(0,0,0,.12); }
+  .avatar.photo { background-size: cover !important; background-position: center; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
+  .photo-row { display: flex; gap: 12px; align-items: center; }
+  .photo-row img { width: 84px; height: 84px; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); cursor: zoom-in; flex: none; }
+  .photo-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .photo-big { width: 100%; max-height: 62vh; object-fit: contain; border-radius: 12px; background: var(--surface-2); }
+  .ans-photo { float: right; width: 72px; height: 72px; object-fit: cover; border-radius: 12px; margin: 0 0 8px 10px; border: 1px solid var(--line); cursor: zoom-in; }
+  .ds-thumb { width: 34px; height: 34px; object-fit: cover; border-radius: 8px; order: -1; flex: none; }
   .item-main { min-width: 0; }
   .item .name { font-size: 16.5px; font-weight: 700; line-height: 1.25; }
   .qline { margin-top: 3px; font-size: 13.5px; color: var(--muted); }
@@ -541,6 +548,10 @@
       <label>Category<input name="category"></label>
     </div>
     <label>Notes<textarea name="notes" rows="2"></textarea></label>
+    <div class="photo-row" id="photoRow" hidden>
+      <img id="itemPhoto" alt="Item photo" hidden>
+      <div class="photo-btns"><button class="btn" type="button" id="photoAdd">📷 Add photo</button><button class="btn danger sm" type="button" id="photoRemove" hidden>Remove photo</button></div>
+    </div>
     <canvas class="preview" id="itemPreview"></canvas>
     <div class="btns">
       <button class="btn danger" type="button" id="itemDelete">Delete</button>
@@ -633,7 +644,7 @@
 <!-- Settings / sync -->
 <dialog id="settingsDlg">
   <form class="dlg" method="dialog" id="settingsForm">
-    <h2>Settings <span class="kv" style="font-weight:500">· v20</span></h2>
+    <h2>Settings <span class="kv" style="font-weight:500">· v21</span></h2>
     <label>Your name<input name="userName" autocomplete="given-name" placeholder="e.g. Jim" maxlength="40"></label>
     <button class="settings-link" type="button" id="drawersBtn"><span>Drawers &amp; categories<small>Which drawer holds what, mixed drawers, drawer labels</small></span><span aria-hidden="true">›</span></button>
     <div class="section-label">Appearance</div>
@@ -694,6 +705,16 @@
   </form>
 </dialog>
 
+<!-- Item photo -->
+<input type="file" id="photoFile" accept="image/*" capture="environment" hidden>
+<dialog id="photoDlg">
+  <div class="dlg">
+    <h2 id="photoTitle">Photo</h2>
+    <img id="photoBig" alt="Item photo" class="photo-big">
+    <div class="btns"><button class="btn" type="button" id="photoRetake">Retake</button><span style="flex:1"></span><button class="btn primary" type="button" id="photoClose">Close</button></div>
+  </div>
+</dialog>
+
 <!-- Drawer sheet (from the map) -->
 <dialog id="drawerSheet">
   <div class="dlg">
@@ -725,9 +746,9 @@
   </div>
 </dialog>
 
-<script src="niimbluelib.js?v=20"></script>
-<script src="qr.js?v=20"></script>
-<script src="parser.js?v=20"></script>
-<script src="app.js?v=20"></script>
+<script src="niimbluelib.js?v=21"></script>
+<script src="qr.js?v=21"></script>
+<script src="parser.js?v=21"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>

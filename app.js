@@ -35,11 +35,12 @@
       if (dbp) return dbp;
       dbp = new Promise((resolve, reject) => {
         if (!window.indexedDB) return reject(new Error('no IndexedDB'));
-        const req = indexedDB.open('waldo-supply', 1);
+        const req = indexedDB.open('waldo-supply', 2);
         req.onupgradeneeded = () => {
           const d = req.result;
           if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv');
           if (!d.objectStoreNames.contains('backups')) d.createObjectStore('backups', { keyPath: 'at' });
+          if (!d.objectStoreNames.contains('photos')) d.createObjectStore('photos', { keyPath: 'id' });
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
@@ -62,6 +63,9 @@
       addBackup: (b) => tx('backups', 'readwrite', (os) => os.put(b)),
       delBackup: (at) => tx('backups', 'readwrite', (os) => os.delete(at)),
       available: () => db().then((d) => !!d),
+      photos: () => tx('photos', 'readonly', (os) => os.getAll()).then((l) => l || []),
+      putPhoto: (rec) => tx('photos', 'readwrite', (os) => os.put(rec)),
+      delPhoto: (id) => tx('photos', 'readwrite', (os) => os.delete(id)),
       get ok() { return ok; },
     };
   })();
@@ -460,7 +464,7 @@
     const el = $('answer');
     el.classList.toggle('ai', !!lastAnswerAi); lastAnswerAi = false;
     if (fuzzyNote) { text = fuzzyNote + text; if (typeof spoken === 'string') spoken = fuzzyNote + spoken; fuzzyNote = ''; }
-    el.textContent = text; el.classList.add('show');
+    el.textContent = text; el.classList.add('show'); delete el.dataset.item;
     actions = [].concat(actions || []).filter(Boolean);
     if (actions.length) {
       const row = document.createElement('div');
@@ -929,8 +933,10 @@
       acts.push({ label: 'Fix name', run: () => openItem(item, true) });
       for (const d of drawerCfg()) if (!isGeneral(d) && d.category) acts.push({ label: d.category, run: () => moveToCategory(item, d) });
     } else acts.push({ label: 'Fix name or drawer', run: () => openItem(item, true) });
+    acts.push({ label: photoUrl.has(item.id) ? '📷 Retake photo' : '📷 Add photo', run: () => pickPhoto(item) });
     acts.push(undo);
     answer(msg, spoken, acts);
+    addAnswerPhoto(item);
     if (settings.autoPrint && printer.connected) printItem(item, 1, true);
   }
 
@@ -1013,9 +1019,11 @@
       { label: 'Used one', run: () => { setQuantity(it, it.quantity - 1); if (!it.deleted) focusItem(it, true); else answer('Used the last ' + it.name + ' — removed.', false); } },
       { label: 'Add one', run: () => { setQuantity(it, it.quantity + 1); focusItem(it, true); } },
       { label: 'Reprint', run: () => printItem(it) },
+      { label: photoUrl.has(it.id) ? 'Photo' : '📷 Add photo', run: () => openPhoto(it) },
       { label: 'On map', run: () => showOnMap(it.name) },
       { label: 'Edit', run: () => openItem(it) },
     ]);
+    addAnswerPhoto(it);
   }
 
   function focusDrawer(name) {
@@ -1523,6 +1531,145 @@
     updateSyncUi();
   }
 
+  // ---------------------------------------------------------------- item photos
+  // Taken with the phone camera, shrunk to a small JPEG (fits in one Google Sheet cell), kept in IndexedDB,
+  // and synced through the Sheet's "Photos" tab so every phone sees them.
+  const photoUrl = new Map();            // item id -> data: URL
+  const PHOTO_MAX = 45000;               // characters; a Sheet cell holds 50,000
+  async function loadPhotos() {
+    for (const r of await Store.photos()) if (r.data) photoUrl.set(r.id, r.data);
+  }
+  function compressPhoto(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let side = 640, q = 0.72, out = '';
+        for (let i = 0; i < 12; i++) {
+          const k = Math.min(1, side / Math.max(img.naturalWidth, img.naturalHeight));
+          const c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+          const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+          out = c.toDataURL('image/jpeg', q);
+          if (out.length <= PHOTO_MAX) return resolve(out);
+          if (q > 0.5) q -= 0.08; else side = Math.round(side * 0.85);
+        }
+        resolve(out.length <= PHOTO_MAX ? out : null);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file isn’t a photo the phone can open')); };
+      img.src = url;
+    });
+  }
+  let photoTarget = null;
+  function pickPhoto(it) {
+    if (!it || !it.id) return;
+    photoTarget = it;
+    const inp = $('photoFile'); inp.value = ''; inp.click();
+  }
+  $('photoFile').addEventListener('change', async () => {
+    const file = $('photoFile').files[0], it = photoTarget;
+    photoTarget = null;
+    if (!file || !it) return;
+    try {
+      const data = await compressPhoto(file);
+      if (!data) return toast('Couldn’t make that photo small enough — try again a little closer');
+      await setPhoto(it, data);
+    } catch (e) { toast(String(e && e.message || e)); }
+  });
+  async function setPhoto(it, data) {
+    const at = Date.now();
+    await Store.putPhoto({ id: it.id, at, data, dirty: true });
+    photoUrl.set(it.id, data);
+    it.photoAt = at; touch(it); saveItems();
+    log('edit', 'Added a photo of ' + it.name);
+    toast('Photo saved with ' + it.name);
+    refreshPhotoUi(it);
+  }
+  async function removePhoto(it) {
+    const at = Date.now();
+    await Store.putPhoto({ id: it.id, at, data: '', dirty: true });
+    photoUrl.delete(it.id);
+    it.photoAt = 0; touch(it); saveItems();
+    log('edit', 'Removed the photo of ' + it.name);
+    refreshPhotoUi(it);
+  }
+  function refreshPhotoUi(it) {
+    if (editing === it && $('itemDlg').open) showItemPhoto(it);
+    const a = $('answer').querySelector('.ans-photo');
+    if (a && a.dataset.id === it.id) { if (photoUrl.has(it.id)) a.src = photoUrl.get(it.id); else a.remove(); }
+    else if (photoUrl.has(it.id) && $('answer').dataset.item === it.id) addAnswerPhoto(it);
+    render();
+  }
+  function addAnswerPhoto(it) {
+    const box = $('answer');
+    box.dataset.item = it.id;
+    if (!photoUrl.has(it.id) || box.querySelector('.ans-photo')) return;
+    const img = el('img', 'ans-photo'); img.src = photoUrl.get(it.id); img.alt = 'Photo of ' + it.name; img.dataset.id = it.id;
+    img.onclick = () => openPhoto(it);
+    box.insertBefore(img, box.firstChild);
+  }
+  function openPhoto(it) {
+    if (!photoUrl.has(it.id)) return pickPhoto(it);
+    $('photoBig').src = photoUrl.get(it.id);
+    $('photoTitle').textContent = it.name + ' · ' + it.drawer;
+    $('photoRetake').onclick = () => { $('photoDlg').close(); pickPhoto(it); };
+    $('photoDlg').showModal();
+  }
+  function showItemPhoto(it) {
+    const has = !!(it && photoUrl.has(it.id));
+    $('photoRow').hidden = !it;
+    $('itemPhoto').hidden = !has;
+    if (has) $('itemPhoto').src = photoUrl.get(it.id);
+    $('photoAdd').textContent = has ? 'Retake photo' : '📷 Add photo';
+    $('photoRemove').hidden = !has;
+  }
+  $('photoAdd').onclick = () => { if (editing) pickPhoto(editing); };
+  $('photoRemove').onclick = () => { if (editing) removePhoto(editing); };
+  $('itemPhoto').onclick = () => { if (editing) openPhoto(editing); };
+  $('photoClose').onclick = () => $('photoDlg').close();
+
+  /** Push photos taken here, pull photos taken on other phones. Runs after each successful sync. */
+  let photoSyncing = false, photoSyncOff = false;
+  async function syncPhotos() {
+    if (photoSyncing || photoSyncOff || !settings.syncUrl || !navigator.onLine) return;
+    photoSyncing = true;
+    const post = async (body) => {
+      const res = await fetch(settings.syncUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow',
+        body: JSON.stringify(Object.assign({ key: settings.syncKey }, body)) });
+      return res.json();
+    };
+    try {
+      const recs = await Store.photos();
+      const local = new Map(recs.map((r) => [r.id, r]));
+      // up
+      for (const r of recs.filter((x) => x.dirty)) {
+        const d = await post({ action: 'photoPut', id: r.id, at: r.at, data: r.data || '' });
+        if (!d.ok) {
+          if (d.error === 'bad_action') { photoSyncOff = true; toast('Photos stay on this phone until the Apps Script is updated (see the v21 notes)'); }
+          break;
+        }
+        r.dirty = false; await Store.putPhoto(r);
+      }
+      // down: items whose photo is newer than ours; photos removed elsewhere
+      const want = [];
+      for (const it of items) {
+        if (it.deleted || isConfig(it)) continue;
+        const mine = local.get(it.id);
+        if (it.photoAt > 0 && (!mine || mine.at < it.photoAt) && !(mine && mine.dirty)) want.push(it.id);
+        if (it.photoAt === 0 && mine && mine.data && !mine.dirty && mine.at < Date.now()) { await Store.delPhoto(it.id); photoUrl.delete(it.id); }
+      }
+      for (let i = 0; i < want.length && !photoSyncOff; i += 6) {
+        const d = await post({ action: 'photoGet', ids: want.slice(i, i + 6) });
+        if (!d.ok) { if (d.error === 'bad_action') photoSyncOff = true; break; }
+        for (const p of d.photos || []) {
+          if (p.data) { await Store.putPhoto({ id: p.id, at: Number(p.at) || 0, data: p.data, dirty: false }); photoUrl.set(p.id, p.data); }
+        }
+      }
+      if (want.length) render();
+    } catch (e) { /* tries again after the next sync */ } finally { photoSyncing = false; }
+  }
+
   // Sync that tells the truth: changes wait in a queue on the phone (saved with the item), go up when there's
   // signal, retry with back-off, and the server merges two phones' edits instead of overwriting.
   let syncFails = 0, retryTimer = null;
@@ -1530,6 +1677,7 @@
     id: r.id, name: r.name, drawer: r.drawer, quantity: Number(r.quantity) || 0, sku: r.sku || '', category: r.category || '',
     notes: r.notes || '', createdAt: r.createdAt || r.updatedAt || Date.now(), updatedAt: r.updatedAt || 0,
     lastPrintedAt: r.lastPrintedAt || null, deleted: !!r.deleted, dirty: false, syncedAt: Number(r.syncedAt) || 0, qtyBase: Number(r.quantity) || 0,
+    ...(r.photoAt !== undefined ? { photoAt: Number(r.photoAt) || 0 } : {}),
   });
   function friendlySyncError(e) {
     const m = String(e && e.message || e);
@@ -1598,6 +1746,7 @@
       syncState.merged = Number(data.merged) || 0;
       syncFails = 0;
       persist('jim.items', items); saveSyncState(); render();
+      syncPhotos();
       if (data.merged) { toast('Merged ' + data.merged + ' change' + (data.merged > 1 ? 's' : '') + ' with another phone’s edits'); log('sync', 'Merged ' + data.merged + ' change' + (data.merged > 1 ? 's' : '') + ' with another device'); }
       else if (fromOthers && !firstSync) toast(fromOthers + ' update' + (fromOthers > 1 ? 's' : '') + ' from another device');
     } catch (e) {
@@ -1758,7 +1907,9 @@
   function itemCard(it) {
     const card = el('div', 'item');
     const k = kindOf(it);
-    const av = el('div', 'avatar'); av.style.background = k.color; av.appendChild(icon(k.icon, 22));
+    const av = el('div', 'avatar'); av.style.background = k.color;
+    if (photoUrl.has(it.id)) { av.classList.add('photo'); av.style.backgroundImage = 'url("' + photoUrl.get(it.id) + '")'; }
+    else av.appendChild(icon(k.icon, 22));
     card.appendChild(av);
 
     const main = el('div', 'item-main');
@@ -1895,6 +2046,7 @@
       }
       const r = el('div', 'qrow');
       const t = el('div', 'qtxt', it.name); t.appendChild(el('small', null, '×' + it.quantity));
+      if (photoUrl.has(it.id)) { const th = el('img', 'ds-thumb'); th.src = photoUrl.get(it.id); th.alt = ''; r.appendChild(th); }
       const b = el('button', null, '›'); b.type = 'button'; b.style.color = 'var(--muted)'; b.setAttribute('aria-label', 'Open ' + it.name);
       r.onclick = () => { $('drawerSheet').close(); openItem(it); };
       r.append(t, b); box.appendChild(r);
@@ -2051,6 +2203,7 @@
     $('quickBar').hidden = !it || isMixed(it);
     if (it && !isMixed(it)) $('qVal').textContent = it.quantity;
     updateItemPreview();
+    showItemPhoto(it && !isMixed(it) ? it : null);
     $('itemDlg').showModal();
     if (!it || fixName) setTimeout(() => { f.name.focus(); if (fixName) f.name.select(); }, 60);
   }
@@ -2108,7 +2261,8 @@
     } else {
       target = addItem(Object.assign({}, v, { quantity: v.quantity || 1 })).item;
       log('stock', 'Stocked ' + target.name + ' → ' + target.drawer);
-      toast('Added ' + target.name + ' in ' + target.drawer);
+      const t2 = target;
+      answer('Added ' + t2.name + ' in ' + t2.drawer.toUpperCase() + '.', false, [{ label: '📷 Add photo', run: () => pickPhoto(t2) }]);
     }
     if (action === 'saveprint') printItem(target);
   });
@@ -2496,7 +2650,7 @@
   }
 
   // test hooks (harmless in production)
-  window.JimApp = { cancelQueued, printDrawerAll, findScored, nameSim, fuzzyCandidates, soundKey, NATIVE, applyAlias, getAliases, runCommand, findItems, renderLabel, renderDrawerLabel, printItem, connectPrinter, syncNow, handleLink, drawerCfg, saveDrawerCfg, itemLink,
+  window.JimApp = { setPhoto, removePhoto, syncPhotos, photoUrl, compressPhoto, cancelQueued, printDrawerAll, findScored, nameSim, fuzzyCandidates, soundKey, NATIVE, applyAlias, getAliases, runCommand, findItems, renderLabel, renderDrawerLabel, printItem, connectPrinter, syncNow, handleLink, drawerCfg, saveDrawerCfg, itemLink,
     get items() { return items; }, get activity() { return activity; }, printer, settings };
 
   switchTab('items');
@@ -2509,6 +2663,7 @@
       const act = await loadNewer('jim.activity', activity);
       if (act) activity = act;
     } catch (e) { /* fall back to what localStorage had */ }
+    try { await loadPhotos(); } catch (e) { /* */ }
     storeReady = true;
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) { /* */ }
     try { const bl = await Store.backups(); lastBackupAt = bl.length ? bl[0].at : 0; } catch (e) { /* */ }

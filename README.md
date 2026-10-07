@@ -16,6 +16,19 @@ Total setup time: about 15 minutes, once.
 
 ---
 
+## What's new in v21
+
+- **Item photos:** after Waldo stocks an item and prints its label, tap **📷 Add photo** to snap a picture of it.
+  The photo shows on the item's row, in "where is…" answers, and in the item sheet (tap it to see it full size,
+  **Retake** or **Remove**). Photos are shrunk to a small JPEG, kept on the phone, and shared with every phone through
+  a new **Photos** tab in the Google Sheet.
+  **Needs the new Code.gs** (paste it in and deploy a new version). Until then, photos stay on the phone that took them.
+
+## What's new in v20
+
+- Sound-alikes from speech are fixed by context: "got in **for** AA batteries" = 4, "drawer **to**" = Drawer 2,
+  "a label **four** the bolts" = for.
+
 ## What's new in v18
 
 - **"Did you mean…?"** Waldo no longer gives up on one misheard word. Close names are matched
